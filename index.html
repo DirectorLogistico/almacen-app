@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.3 · fase 2';
+const VERSION='3.4 · fase 2';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -1258,7 +1258,7 @@ async function toPDF(name,title,sub,blocks,land=true){
   if(b.cols){doc.autoTable({startY:y+1,head:[b.cols],body:b.rows,theme:'grid',styles:{fontSize:7.6,cellPadding:1.4,textColor:[20,27,61],lineColor:[205,210,225]},headStyles:{fillColor:[63,63,70],textColor:255,fontStyle:'bold'},alternateRowStyles:{fillColor:[244,244,245]},margin:{left:12,right:12},columnStyles:b.cs||{}});y=doc.lastAutoTable.finalY+7}
   if(y>doc.internal.pageSize.getHeight()-25){doc.addPage();y=18}
  });
- const n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(140);doc.text('Página '+i+' de '+n+' · Maqueta v2: datos marcados «ej.» son de ejemplo',12,doc.internal.pageSize.getHeight()-8)}
+ const n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(140);doc.text('Página '+i+' de '+n+' · Latamks Almacén · Confidencial',12,doc.internal.pageSize.getHeight()-8)}
  await saveFile(name+'_'+fstamp()+'.pdf',doc.output('blob'));
 }
 /* Tablas exportables: cada vista registra sus tablas aquí */
@@ -4239,6 +4239,144 @@ ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  catch(e){console.error(e);toast('No se pudo generar la copia: '+sbErr(e),'er')}
  finally{if(el)el.disabled=false}};
 {const _aj2=VIEWS.ajus;VIEWS.ajus=function(){return copiaCard()+_aj2()}}
+
+/* ================= Informe ejecutivo (v3.4) =================
+   Botón «Informe ejecutivo» en el Tablero, como en la app HH:
+   resumen, lectura del periodo, decisiones sugeridas y descarga en PDF y Excel.
+   Solo Gerencia y el Auxiliar descargan (decisión 37). */
+const INF_FAM=['Materia prima','Accesorios','Consumibles'];
+function infData(){
+ const D=wData(),F=D.F,A=wAlertas(D);
+ const cat=S.mats.length;
+ const L=[];S.mats.forEach(m=>{const q=stk(m);if(q>1e-9)L.push({m,q,v:q*(m.costo||0)})});
+ const valor=L.reduce((a,x)=>a+x.v,0);
+ const fam={};L.forEach(x=>{const f=x.m.fam||'Sin familia';const r=fam[f]||(fam[f]={f,v:0,n:0});r.v+=x.v;r.n++});
+ const famL=Object.values(fam).sort((a,b)=>b.v-a.v);
+ const par=L.filter(x=>x.v>0).sort((a,b)=>b.v-a.v);let ac=0;par.forEach((x,i)=>{ac+=x.v;x.pa=valor?ac/valor:0;x.cl=x.pa-x.v/valor<.8?'A':x.pa-x.v/valor<.95?'B':'C';x.rank=i+1});
+ const claseA=par.filter(x=>x.cl==='A');
+ const top10=par.slice(0,10).reduce((a,x)=>a+x.v,0);
+ const sinCostoStk=L.filter(x=>!x.m.costo),sinCosto=S.mats.filter(m=>!m.costo);
+ const corregir=S.mats.filter(m=>/^0000|NO APLICA/i.test(m.cod));
+ const al=k=>A.find(a=>a.k===k)||{n:0,v:0,rows:[],c:[]};
+ const cargas=S.movs.filter(m=>/Carga desde Excel \(Siesa\)/.test(m.doc||''));
+ const ultCarga=cargas.reduce((a,m)=>m.f>a?m.f:a,'');
+ const copia=typeof ultimaCopia==='function'?ultimaCopia():'';
+ return{D,F,A,cat,L,valor,famL,par,claseA,top10,sinCostoStk,sinCosto,corregir,al,ultCarga,copia}}
+const infPct=v=>nf1.format((v||0)*100)+' %';
+function infLectura(I){const out=[];const D=I.D;
+ out.push(`El inventario en AL001 (almacén principal) vale ${mm(I.valor)} en ${nf0.format(I.L.length)} referencias con existencia, de ${nf0.format(I.cat)} del catálogo de Siesa.`);
+ if(I.famL.length)out.push('Por familia: '+I.famL.map(f=>`${f.f} ${mm(f.v)} (${infPct(I.valor?f.v/I.valor:0)})`).join(' · ')+'.');
+ if(I.par.length)out.push(`${nf0.format(I.claseA.length)} referencias (clase A) concentran el 80 % del valor; las 10 de mayor valor suman ${infPct(I.valor?I.top10/I.valor:0)}. La de mayor valor es ${I.par[0].m.desc} (${mm(I.par[0].v)}).`);
+ out.push(`Entregado a producción del ${fd(I.F.d)} al ${fd(I.F.h)}: ${mm(D.entV)}. Inventario en proceso hoy: ${mm(D.wipV)}. Solicitudes abiertas: ${nf0.format(D.solsA.length)}.`);
+ out.push(`${nf0.format(I.sinCosto.length)} referencias del catálogo no tienen costo en Siesa (${nf0.format(I.sinCostoStk.length)} de ellas con existencia) y ${nf0.format(I.corregir.length)} tienen el código por corregir en Siesa.`);
+ const q=I.al('quieto');if(q.n)out.push(`${nf0.format(q.n)} referencias llevan más de 30 días sin movimiento (${mm(q.v)}).`);
+ out.push(I.ultCarga?`Última carga de existencias desde Siesa: ${fd(I.ultCarga)}.`:'Todavía no se ha cargado el inventario de Siesa.');
+ return out}
+function infDecisiones(I){const out=[];const D=I.D;const P=(p,t)=>out.push({p,t});
+ if(I.sinCostoStk.length)P('Alta',`Pedir a contabilidad el costo en Siesa de ${I.sinCostoStk.length===1?'1 referencia':I.sinCostoStk.length+' referencias'} con existencia y sin costo: el valor del inventario está subestimado.`);
+ const s=I.al('siesa');if(s.n)P('Alta',`Hay ${s.n} diferencias entre Siesa y el aplicativo (${mm(s.v)}). Revisarlas y hacer el ajuste en Siesa o en la app.`);
+ if(U.user&&U.user.rol==='Gerencia'&&I.copia!==HOY)P('Alta','Descargar la copia de seguridad del día en Ajustes y guardarla en la nube de la empresa.');
+ if(I.claseA.length)P('Media',`Hacer conteo cíclico de las ${I.claseA.length} referencias clase A que concentran el 80 % del valor, empezando por ${I.claseA.slice(0,3).map(x=>x.m.cod).join(', ')}.`);
+ const so=I.al('sol');if(so.n)P('Media',`${so.n} solicitudes de producción esperan entrega (${mm(so.v)}). Priorizar las más antiguas.`);
+ const u=I.al('ubi');if(u.n)P('Media',`${u.n} referencias con existencia no tienen ubicación física registrada (${mm(u.v)}). Asignarlas en Ubicaciones.`);
+ if(I.corregir.length)P('Media',`Solicitar en Siesa el código maestro de ${I.corregir.length} referencias marcadas «por corregir» (${I.corregir.slice(0,3).map(m=>m.cod).join(', ')}…).`);
+ const q=I.al('quieto');if(q.n)P('Media',`Revisar ${q.n} referencias sin movimiento hace más de 30 días (${mm(q.v)}): confirmar si se usarán o si se liberan.`);
+ if(I.sinCosto.length>I.sinCostoStk.length)P('Baja',`${I.sinCosto.length-I.sinCostoStk.length} referencias sin existencia tampoco tienen costo en Siesa: completarlo antes de comprarlas o usarlas.`);
+ const inc=I.al('inc');if(inc.n)P('Baja',`${inc.n} movimientos incompletos o inconsistentes en el kárdex: revisarlos.`);
+ const sob=I.al('sob');if(sob.n)P('Baja',`${sob.n} materiales sobrantes en proyectos cerrados (${mm(sob.v)}): pedir la devolución a almacén.`);
+ const ord={Alta:0,Media:1,Baja:2};return out.sort((a,b)=>ord[a.p]-ord[b.p])}
+function infKpis(I){const D=I.D;return[
+ ['Valor del inventario',mm(I.valor),nf0.format(I.L.length)+' referencias con existencia'],
+ ['Materia prima',mm((I.famL.find(f=>f.f==='Materia prima')||{}).v||0),infPct(I.valor?((I.famL.find(f=>f.f==='Materia prima')||{}).v||0)/I.valor:0)+' del valor'],
+ ['Entregado a producción',mm(D.entV),fd(I.F.d)+' a '+fd(I.F.h)],
+ ['Inventario en proceso',mm(D.wipV),nf0.format(D.refs.size)+' referencias en planta'],
+ ['Clase A (80 % del valor)',nf0.format(I.claseA.length),'referencias para conteo cíclico'],
+ ['Sin costo Siesa',nf0.format(I.sinCosto.length),nf0.format(I.sinCostoStk.length)+' con existencia'],
+ ['Solicitudes abiertas',nf0.format(D.solsA.length),mm(D.solV)+' por entregar'],
+ ['Código por corregir',nf0.format(I.corregir.length),'sin código maestro en Siesa']]}
+
+/* ---------- Ventana del informe ---------- */
+const PCL={Alta:'er',Media:'wa',Baja:'ok'};
+ACT.informe=()=>{const I=infData();const K=infKpis(I);const Lc=infLectura(I);const Dc=infDecisiones(I);
+ const dl=puedeDescargar('xls');
+ modal(mh('Informe ejecutivo','Almacén · '+fd(I.F.d)+' a '+fd(I.F.h)+' · costo Siesa')+
+ `<div class="infk">${K.slice(0,4).map(k=>`<div class="card flat"><div class="mut" style="font-size:13px">${esc(k[0])}</div><div style="font-size:24px;font-weight:700;margin:4px 0 2px">${esc(k[1])}</div><div class="mut3" style="font-size:12px">${esc(k[2])}</div></div>`).join('')}</div>
+ <div class="card flat" style="background:var(--card2);margin-bottom:14px"><h3 style="margin:0 0 8px">Lectura del periodo</h3><ul style="margin:0;padding-left:20px;line-height:1.6">${Lc.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>
+ <h3 style="margin:0 0 2px">Decisiones sugeridas</h3><p class="mut" style="margin:0 0 8px;font-size:12.5px">Las más importantes; el informe trae todas</p>
+ ${Dc.length?Dc.slice(0,4).map(d=>`<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--bd)"><span class="bd ${PCL[d.p]}" style="flex:none">${d.p}</span><span style="line-height:1.5">${esc(d.t)}</span></div>`).join(''):'<p class="mut">No hay decisiones pendientes con los datos actuales.</p>'}
+ <p class="mut3" style="font-size:12px;margin-top:12px">El PDF tiene resumen, lectura, decisiones, inventario por familia, referencias clase A y controles. El Excel trae cada tabla en una hoja.${dl?'':' <b>Solo Gerencia y el Auxiliar logístico descargan informes.</b>'}</p>
+ <div class="mf"><button class="btn${dl?'':' sbOff'}" data-act="infPdf" ${dl?'':'aria-disabled="true"'}>${icon('down',16)}Descargar PDF</button><button class="btn ghost${dl?'':' sbOff'}" data-act="infXls">${icon('down',16)}Descargar Excel</button><button class="btn ghost${dl?'':' sbOff'}" data-act="infAmbos">Ambos</button><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'w')};
+ACT_DESCARGA.push('infPdf','infXls','infAmbos');
+ACT.infPdf=()=>infPDF(infData());
+ACT.infXls=()=>infXLS(infData());
+ACT.infAmbos=async()=>{const I=infData();await infPDF(I);await infXLS(I)};
+
+/* ---------- PDF ---------- */
+async function infPDF(I){if(!window.jspdf){toast('La librería de PDF no cargó.','er');return}
+ const {jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'letter'});
+ const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),mx=14;
+ const NAVY=[20,32,90],TX=[20,27,61],MUT=[100,110,140];
+ const head=()=>{doc.setFillColor(...NAVY);doc.rect(0,0,W,14,'F');let lx=mx;try{const lg=logoSrc();if(lg&&/^data:image/.test(lg)){doc.addImage(lg,/png/.test(lg)?'PNG':'JPEG',mx,2.5,9,9,undefined,'FAST');lx=mx+12}}catch(e){}
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Informe ejecutivo · Almacén',lx,9);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('AL001 · costo Siesa · '+fd(I.F.d)+' a '+fd(I.F.h),W-mx,9,{align:'right'})};
+ let y=0;const nueva=()=>{doc.addPage();head();y=24};const need=h=>{if(y+h>H-16)nueva()};
+ const h2=t=>{need(14);doc.setTextColor(...TX);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(t,mx,y);doc.setDrawColor(47,76,155);doc.setLineWidth(.6);doc.line(mx,y+1.8,mx+22,y+1.8);y+=8};
+ head();y=26;
+ doc.setTextColor(...TX);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text('Informe ejecutivo',mx,y);y+=6;
+ doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...MUT);doc.text('Gestión de almacén e inventario · Latamks',mx,y);y+=5;
+ doc.setFillColor(241,244,250);doc.roundedRect(mx,y,W-2*mx,13,2,2,'F');doc.setFontSize(8.6);doc.setTextColor(...TX);doc.setFont('helvetica','bold');
+ doc.text('Almacén principal AL001 · Periodo '+fd(I.F.d)+' a '+fd(I.F.h)+' · Última carga Siesa: '+(I.ultCarga?fd(I.ultCarga):'sin carga'),mx+3,y+5);
+ doc.setFont('helvetica','normal');doc.setTextColor(...MUT);doc.text(nf0.format(I.cat)+' referencias en catálogo · generado el '+fd(HOY)+' '+nowHM()+' por '+(U.user?U.user.nombre:''),mx+3,y+10);y+=20;
+ h2('Resumen ejecutivo');
+ const K=infKpis(I),cw=(W-2*mx-9)/4,ch=19,cols=[[20,32,90],[47,76,155],[16,150,96],[224,123,20],[124,58,237],[220,38,38],[14,165,233],[100,116,139]];
+ K.forEach((k,i)=>{const cx=mx+(i%4)*(cw+3),cy=y+Math.floor(i/4)*(ch+3);doc.setFillColor(246,248,253);doc.setDrawColor(222,227,240);doc.roundedRect(cx,cy,cw,ch,1.5,1.5,'FD');doc.setFillColor(...cols[i]);doc.rect(cx,cy,1.4,ch,'F');
+  doc.setFontSize(7.4);doc.setTextColor(...MUT);doc.text(k[0],cx+4,cy+5);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...TX);doc.text(String(k[1]),cx+4,cy+11.5);doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor(...MUT);doc.text(doc.splitTextToSize(k[2],cw-6)[0],cx+4,cy+16)});
+ y+=2*ch+10;
+ h2('Lectura del periodo');
+ infLectura(I).forEach(t=>{const L=doc.splitTextToSize(t,W-2*mx-8);need(L.length*4.4+2);doc.setFillColor(47,76,155);doc.circle(mx+1.5,y-1.1,.9,'F');doc.setFontSize(9);doc.setTextColor(...TX);doc.text(L,mx+5,y);y+=L.length*4.4+1.6});
+ y+=4;h2('Decisiones sugeridas');
+ const PC={Alta:[220,38,38],Media:[224,123,20],Baja:[16,150,96]};const Dc=infDecisiones(I);
+ if(!Dc.length){doc.setFontSize(9);doc.setTextColor(...MUT);doc.text('No hay decisiones pendientes con los datos actuales.',mx,y);y+=6}
+ Dc.forEach(d=>{const L=doc.splitTextToSize(d.t,W-2*mx-24);const hh=Math.max(9,L.length*4.2+4.5);need(hh+2);doc.setFillColor(246,248,253);doc.roundedRect(mx,y-4,W-2*mx,hh,1.5,1.5,'F');
+  doc.setFillColor(...PC[d.p]);doc.roundedRect(mx+2,y-1.8,14,5,2.4,2.4,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text(d.p,mx+9,y+1.6,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(8.8);doc.setTextColor(...TX);doc.text(L,mx+20,y+1.6);y+=hh+2});
+ /* Página 2: familias y clase A */
+ nueva();h2('Inventario por familia');
+ const mxv=Math.max(1,...I.famL.map(f=>f.v));
+ I.famL.forEach(f=>{need(9);doc.setFontSize(9);doc.setTextColor(...TX);doc.text(f.f,mx,y);doc.setFillColor(226,231,243);doc.roundedRect(mx+42,y-3,100,3.6,1.2,1.2,'F');doc.setFillColor(47,76,155);doc.roundedRect(mx+42,y-3,Math.max(1,100*f.v/mxv),3.6,1.2,1.2,'F');
+  doc.setFont('helvetica','bold');doc.text(mm(f.v),W-mx,y,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(7.4);doc.setTextColor(...MUT);doc.text(nf0.format(f.n)+' ref. · '+infPct(I.valor?f.v/I.valor:0),mx+42,y+3.6);y+=10});
+ y+=2;h2('Referencias clase A · 80 % del valor');
+ doc.autoTable({startY:y,head:[['#','Código','Descripción','Familia','Existencia','Costo unit.','Valor','% acum.']],body:I.claseA.slice(0,40).map(x=>[x.rank,x.m.cod,x.m.desc,x.m.fam,qf(x.q,x.m.um)+' '+x.m.um,mm(x.m.costo),mm(x.v),infPct(x.pa)]),
+  theme:'grid',styles:{fontSize:7.2,cellPadding:1.3,textColor:TX,lineColor:[222,227,240]},headStyles:{fillColor:NAVY,textColor:255,fontStyle:'bold'},alternateRowStyles:{fillColor:[246,248,253]},margin:{left:mx,right:mx,top:22},columnStyles:{0:{halign:'right',cellWidth:7},4:{halign:'right'},5:{halign:'right'},6:{halign:'right'},7:{halign:'right'}},didDrawPage:()=>head()});
+ y=doc.lastAutoTable.finalY+8;if(I.claseA.length>40){doc.setFontSize(8);doc.setTextColor(...MUT);doc.text('… y '+(I.claseA.length-40)+' referencias más (ver Excel).',mx,y-3)}
+ /* Página 3: controles */
+ nueva();h2('Controles');
+ const ctl=[['Referencias sin costo Siesa',I.sinCosto.length,I.sinCostoStk.length+' con existencia'],['Código por corregir en Siesa',I.corregir.length,''],...I.A.map(a=>[a.t,a.na?'—':a.n,a.na||(a.v!=null?mm(a.v):'')])];
+ doc.autoTable({startY:y,head:[['Control','Cantidad','Detalle']],body:ctl,theme:'grid',styles:{fontSize:8.2,cellPadding:1.6,textColor:TX,lineColor:[222,227,240]},headStyles:{fillColor:NAVY,textColor:255},margin:{left:mx,right:mx,top:22},columnStyles:{1:{halign:'right',cellWidth:22}},didDrawPage:()=>head()});
+ y=doc.lastAutoTable.finalY+8;
+ if(I.sinCostoStk.length){h2('Con existencia y sin costo Siesa');doc.autoTable({startY:y,head:[['Código','Descripción','Familia','Existencia']],body:I.sinCostoStk.map(x=>[x.m.cod,x.m.desc,x.m.fam,qf(x.q,x.m.um)+' '+x.m.um]),theme:'grid',styles:{fontSize:7.6,cellPadding:1.3,textColor:TX,lineColor:[222,227,240]},headStyles:{fillColor:NAVY,textColor:255},margin:{left:mx,right:mx,top:22},columnStyles:{3:{halign:'right'}},didDrawPage:()=>head()});y=doc.lastAutoTable.finalY+8}
+ if(I.corregir.length){need(20);h2('Código por corregir en Siesa');doc.autoTable({startY:y,head:[['Código','Descripción','Familia']],body:I.corregir.map(m=>[m.cod,m.desc,m.fam]),theme:'grid',styles:{fontSize:7.6,cellPadding:1.3,textColor:TX,lineColor:[222,227,240]},headStyles:{fillColor:NAVY,textColor:255},margin:{left:mx,right:mx,top:22},didDrawPage:()=>head()})}
+ const n=doc.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setDrawColor(222,227,240);doc.setLineWidth(.2);doc.line(mx,H-11,W-mx,H-11);doc.setFontSize(7.5);doc.setTextColor(...MUT);doc.text('Latamks Almacén · Informe ejecutivo · Confidencial',mx,H-7);doc.text('Página '+i+' de '+n,W-mx,H-7,{align:'right'})}
+ await saveFile('informe_ejecutivo_almacen_'+HOY+'.pdf',doc.output('blob'))}
+
+/* ---------- Excel ---------- */
+async function infXLS(I){if(!window.XLSX){toast('La librería de Excel no cargó.','er');return}
+ const wb=XLSX.utils.book_new();const add=(n,cols,rows)=>{const ws=XLSX.utils.aoa_to_sheet([cols,...rows]);ws['!cols']=cols.map((c,i)=>({wch:Math.min(60,Math.max(String(c).length+2,...rows.slice(0,300).map(r=>String(r[i]==null?'':r[i]).length+1)))}));XLSX.utils.book_append_sheet(wb,ws,n.slice(0,31))};
+ const D=I.D;
+ add('Resumen',['Indicador','Valor','Detalle'],[['Valor del inventario AL001',Math.round(I.valor),I.L.length+' referencias con existencia'],['Referencias en catálogo',I.cat,''],...I.famL.map(f=>['Valor '+f.f,Math.round(f.v),f.n+' referencias']),['Entregado a producción',Math.round(D.entV),I.F.d+' a '+I.F.h],['Inventario en proceso',Math.round(D.wipV),D.refs.size+' referencias'],['Solicitudes abiertas',D.solsA.length,Math.round(D.solV)],['Referencias clase A',I.claseA.length,'80 % del valor'],['Sin costo Siesa',I.sinCosto.length,I.sinCostoStk.length+' con existencia'],['Código por corregir',I.corregir.length,''],['Última carga Siesa',I.ultCarga||'sin carga',''],['Generado',HOY+' '+nowHM(),U.user?U.user.nombre:'']]);
+ add('Lectura',['Lectura del periodo'],infLectura(I).map(t=>[t]));
+ add('Decisiones',['Prioridad','Decisión sugerida'],infDecisiones(I).map(d=>[d.p,d.t]));
+ add('Por familia',['Familia','Referencias','Valor','% del valor'],I.famL.map(f=>[f.f,f.n,Math.round(f.v),I.valor?+(f.v/I.valor*100).toFixed(2):0]));
+ add('Pareto ABC',['#','Código','Descripción','Familia','U.M.','Existencia','Costo unitario','Valor','% acumulado','Clase'],I.par.map(x=>[x.rank,x.m.cod,x.m.desc,x.m.fam,x.m.um,x.q,x.m.costo,Math.round(x.v),+(x.pa*100).toFixed(2),x.cl]));
+ add('Sin costo Siesa',['Código','Descripción','Familia','Existencia'],I.sinCosto.map(m=>[m.cod,m.desc,m.fam,stk(m)]));
+ add('Por corregir',['Código','Descripción','Familia','Existencia'],I.corregir.map(m=>[m.cod,m.desc,m.fam,stk(m)]));
+ add('Controles',['Control','Cantidad','Valor'],I.A.map(a=>[a.t,a.na?'':a.n,a.v==null?'':Math.round(a.v)]));
+ await saveFile('informe_ejecutivo_almacen_'+HOY+'.xlsx',new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})]))}
+
+/* ---------- Botón en el encabezado del Tablero ---------- */
+(()=>{const st=document.createElement('style');st.textContent='.infk{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}@media(max-width:760px){.infk{grid-template-columns:1fr 1fr}}.infbtn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border:0;border-radius:12px;font:600 14px inherit;color:#fff;cursor:pointer;background:linear-gradient(135deg,#2F4C9B,#14205A);box-shadow:0 6px 18px rgba(20,32,90,.28);margin-right:6px}.infbtn:hover{filter:brightness(1.1)}@media(max-width:640px){.infbtn span{display:none}.infbtn{padding:0 11px}}';document.head.appendChild(st)})();
+function infBoton(){const t=$('header.top');if(!t)return;const b=$('#infBtn');if(U.view!=='dash'){if(b)b.remove();return}if(b)return;
+ const n=document.createElement('button');n.id='infBtn';n.className='infbtn';n.dataset.act='informe';n.innerHTML=icon('down',16)+'<span>Informe ejecutivo</span>';const sp=t.querySelector('.sp');if(sp)sp.after(n);else t.appendChild(n)}
+new MutationObserver(()=>{if(U.user)infBoton()}).observe(document.body,{childList:true,subtree:true});
 
 </script>
 </body>
