@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.0 · fase 1';
+const VERSION='3.1 · fase 1';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -2381,7 +2381,7 @@ VIEWS.ajus=function(){
  <div class="card"><div class="ch"><div><h3>Limpiar fotos de evidencia de entregas</h3><p>Borra las fotos para liberar espacio. Las entregas, cantidades y costos <b>no se borran</b>.</p></div></div>${fotoCleanUI()}</div>${papelCard()}
  <div class="card"><div class="ch"><div><h3>Datos ${BLANCO?'de la versión en blanco':'de la maqueta'}</h3><p>${BLANCO?'Aquí cargas todo desde cero para hacer pruebas reales.':'Los cambios que hagas se guardan solo en este navegador.'}</p></div></div><div class="acts"><button class="btn dng sm" data-act="askBlank">${icon('trash',14)}Borrar todo y empezar desde cero</button>${BLANCO?'':`<button class="btn ghost sm" data-act="askReset">Volver a los datos de ejemplo</button>`}</div><p class="mut3" style="font-size:12px;margin-top:10px">Se conservan los usuarios, el logo y el precio de la chatarra. Antes de borrar, descarga una copia de seguridad.</p></div>`:''}`;
 };
-const QRURL='https://latamks-almacen.github.io/app/#qr';
+const QRURL=location.origin+location.pathname+'#qr';
 function drawQR(){const e=$('#qrSol');if(e&&window.QRCode&&!e.firstChild)new QRCode(e,{text:QRURL,width:150,height:150,correctLevel:QRCode.CorrectLevel.M})}
 
 /* ================= Eventos ================= */
@@ -4025,13 +4025,17 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 let sbPend=false;
 function sbRetoques(){sbPend=false;
  const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Solo lectura.</b> La app ya está conectada a la base de datos de Latamks con inicio de sesión y perfiles. Todavía no hay datos cargados y lo que registres no se guarda: los módulos se activan fase por fase.`}
+ const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
+ if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
 }
 new MutationObserver(()=>{if(!sbPend){sbPend=true;requestAnimationFrame(sbRetoques)}}).observe(document.body,{childList:true,subtree:true});
-(()=>{const st=document.createElement('style');st.textContent='.sbOff{opacity:.45!important;cursor:not-allowed!important;filter:grayscale(.6)}';document.head.appendChild(st)})();
+(()=>{const st=document.createElement('style');st.textContent='.sbOff{opacity:.45!important;cursor:not-allowed!important;filter:grayscale(.6)}.pwwrap{position:relative}.pwwrap .inp{padding-right:84px}.pwver{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 12px;border-radius:10px;border:1px solid var(--bd2);background:var(--card);color:var(--tx);font:600 13px inherit;cursor:pointer}.pwver:hover{background:var(--hov)}.lgmsg{color:var(--er);font-size:13.5px;font-weight:600;text-align:center;min-height:20px;margin:2px 0 10px}.prof[data-act]{cursor:pointer}#perfPop{position:fixed;z-index:80;background:var(--card);color:var(--tx);border:1px solid var(--bd2);border-radius:14px;box-shadow:0 14px 40px rgba(10,20,60,.28);padding:8px;animation:fade .15s}#perfPop .pm-mail{font-size:13px;color:var(--tx2);padding:8px 10px 10px;border-bottom:1px solid var(--bd);margin-bottom:6px;word-break:break-all}#perfPop button{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;background:none;color:var(--tx);font:500 14px inherit;border-radius:10px;cursor:pointer;text-align:left}#perfPop button:hover{background:var(--hov)}.usoflex{display:flex;gap:30px;flex-wrap:wrap;align-items:center}.usoit{display:flex;gap:14px;align-items:center}.usoit b{display:block;font-size:15px}.usoit small{color:var(--tx2);font-size:13px}';document.head.appendChild(st)})();
 
 /* ---------- Inicio de sesión ---------- */
-const sbErr=e=>{const m=String((e&&e.message)||e||'');if(/invalid login credentials/i.test(m))return 'Correo o contraseña incorrectos.';if(/email not confirmed/i.test(m))return 'La cuenta no está confirmada. Pídele a Gerencia que la active en Supabase.';if(/fetch|network|failed to/i.test(m))return 'No hay conexión con el servidor. Revisa el internet e intenta de nuevo.';return esc(m)};
+const MSG_CRED='Correo o contraseña incorrectos.';
+const esRed=e=>/fetch|network|failed to|load failed/i.test(String((e&&e.message)||e||''));
+const sbErr=e=>{const m=String((e&&e.message)||e||'');if(/invalid login credentials/i.test(m))return MSG_CRED;if(/email not confirmed/i.test(m))return 'La cuenta no está confirmada. Pídele a Gerencia que la active en Supabase.';if(/fetch|network|failed to/i.test(m))return 'No hay conexión con el servidor. Revisa el internet e intenta de nuevo.';return esc(m)};
 function renderLogin(){
  $('#app').className='app';
  const head=`<div class="brand" style="padding:0;height:auto;margin-bottom:18px"><img class="logoimg" src="${logoSrc()}" alt=""><div class="brand-t"><b>Latamks Almacén</b><small>Inventario, entregas y trazabilidad</small></div></div>`;
@@ -4041,25 +4045,28 @@ function renderLogin(){
  $('#app').innerHTML=`<div class="login"><div class="lcard card flat">${head}
  ${qr?`<div class="qrcta" style="margin:0 0 14px"><div><b>Solicitud de material por QR</b><small>Entra con el usuario del líder de producción.</small></div></div>`:''}
  <form id="lgForm" autocomplete="on"><div class="fld" style="margin-bottom:12px"><label for="lgEmail">Correo</label><input class="inp big" id="lgEmail" type="email" placeholder="usuario@latamks.com" autocomplete="username"></div>
- <div class="fld" style="margin-bottom:14px"><label for="lgPass">Contraseña</label><input class="inp big" id="lgPass" type="password" placeholder="Tu contraseña" autocomplete="current-password"></div>
+ <div class="fld" style="margin-bottom:10px"><label for="lgPass">Contraseña</label><div class="pwwrap"><input class="inp big" id="lgPass" type="password" placeholder="Tu contraseña" autocomplete="current-password"><button type="button" class="pwver" data-act="verClave" data-v="lgPass">Ver</button></div></div>
+ <div class="lgmsg" id="lgMsg" role="alert"></div>
  <button class="btn big" type="submit" id="lgBtn">Entrar</button></form>
  <div class="mut3" style="font-size:12px;margin-top:12px">¿Olvidaste la contraseña? Pídele a Gerencia que te asigne una nueva.</div>
  <div class="mut3" style="font-size:11.5px;margin-top:16px;text-align:center">Versión ${VERSION} · Inventario y costos tomados de Siesa</div>
  </div></div>`;
  $('#lgForm').addEventListener('submit',async e=>{e.preventDefault();
   const btn=$('#lgBtn'),em=$('#lgEmail').value.trim().toLowerCase(),pw=$('#lgPass').value;
-  if(!em||!pw){toast('Escribe tu correo y tu contraseña.','wa');return}
+  const msg=t=>{const m=$('#lgMsg');if(m)m.textContent=t};msg('');
+  if(!em||!pw){msg('Escribe tu correo y tu contraseña.');return}
   btn.disabled=true;btn.textContent='Entrando…';
   try{const {error}=await SB.auth.signInWithPassword({email:em,password:pw});if(error)throw error;
-   $('#lgPass').value='';if(await entrar())return}
-  catch(err){console.error(err);toast(sbErr(err),'er')}
+   if(await entrar()){return}msg(window.SB_MSG||MSG_CRED)}
+  catch(err){msg(esRed(err)?'No hay conexión con el servidor. Revisa el internet e intenta de nuevo.':MSG_CRED)}
   const b2=$('#lgBtn');if(b2){b2.disabled=false;b2.textContent='Entrar'}
  });
 }
 async function entrar(){
  const {data:perfil,error}=await SB.rpc('alm_mi_perfil');
- if(error||!perfil){await SB.auth.signOut();toast(error?'No se pudo leer tu perfil: '+sbErr(error):'Tu correo no tiene un perfil activo en almacén. Habla con Gerencia.','er');return false}
- try{await cargarDatos()}catch(err){console.error(err);await SB.auth.signOut();toast('No se pudieron leer los datos: '+sbErr(err),'er');return false}
+ window.SB_MSG='';
+ if(error||!perfil){await SB.auth.signOut();window.SB_MSG=error&&esRed(error)?'No hay conexión con el servidor. Revisa el internet e intenta de nuevo.':MSG_CRED;return false}
+ try{await cargarDatos()}catch(err){console.error(err);await SB.auth.signOut();window.SB_MSG='No se pudieron leer los datos. Intenta de nuevo en un momento.';return false}
  U.user=S.users.find(x=>x.email===perfil.email)||{email:perfil.email,nombre:perfil.nombre,rol:perfil.rol,activo:true};
  marcarActividad();
  if(location.hash==='#qr'){U.kiosk=true;Object.assign(K,{step:1,tec:null,proy:null,tipo:null,sel:{},sec:null,q:''})}
@@ -4086,6 +4093,54 @@ U.kiosk=false;U.user=null;render();
  }catch(e){console.error(e)}
  window.SB_LISTO=true;U.user=null;U.kiosk=false;render();
 })();
+
+/* ---------- Ver / ocultar contraseña ---------- */
+ACT.verClave=(v,el)=>{const i=document.getElementById(v);if(!i)return;const ver=i.type==='password';i.type=ver?'text':'password';el.textContent=ver?'Ocultar':'Ver';i.focus()};
+
+/* ---------- Menú de la cuenta (clic en la tarjeta del usuario) ---------- */
+function cerrarPerfPop(){const p=$('#perfPop');if(p)p.remove()}
+ACT.perfilMenu=(v,el)=>{if($('#perfPop')){cerrarPerfPop();return}if(!U.user)return;
+ const r=el.getBoundingClientRect(),d=document.createElement('div');d.id='perfPop';d.setAttribute('role','menu');
+ d.style.left=r.left+'px';d.style.top=(r.bottom+6)+'px';d.style.width=Math.max(r.width,240)+'px';
+ d.innerHTML=`<div class="pm-mail">${esc(U.user.email)}</div><button role="menuitem" data-act="cambiarClave">${icon('edit',17)}Cambiar contraseña</button><button role="menuitem" data-act="logout">${icon('logout',17)}Cerrar sesión</button>`;
+ document.body.appendChild(d)};
+document.addEventListener('click',e=>{const p=$('#perfPop');if(p&&!e.target.closest('#perfPop')&&!e.target.closest('.side .prof'))p.remove();if(p&&e.target.closest('#perfPop [data-act]'))setTimeout(cerrarPerfPop,0)},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')cerrarPerfPop();const pf=e.target.closest&&e.target.closest('.side .prof');if(pf&&(e.key==='Enter'||e.key===' ')){e.preventDefault();ACT.perfilMenu(null,pf)}});
+window.addEventListener('resize',cerrarPerfPop);
+
+/* ---------- Cambiar contraseña ---------- */
+const campoClave=(id,lbl,ac)=>`<div class="fld" style="margin-bottom:12px"><label for="${id}">${lbl}</label><div class="pwwrap"><input class="inp" id="${id}" type="password" autocomplete="${ac}"><button type="button" class="pwver" data-act="verClave" data-v="${id}">Ver</button></div></div>`;
+ACT.cambiarClave=()=>{cerrarPerfPop();modal(mh('Cambiar contraseña','Mínimo 8 caracteres, con letras y números.')+
+ campoClave('ccAct','Contraseña actual','current-password')+campoClave('ccNue','Contraseña nueva','new-password')+campoClave('ccCon','Repite la contraseña nueva','new-password')+
+ `<div class="lgmsg" id="ccMsg" role="alert"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="claveGuardar" id="ccBtn">Guardar contraseña</button></div>`,'s')};
+ACT.claveGuardar=async()=>{const a=$('#ccAct').value,n=$('#ccNue').value,c=$('#ccCon').value,msg=t=>{$('#ccMsg').textContent=t},btn=$('#ccBtn');msg('');
+ if(!a||!n||!c){msg('Llena los tres campos.');return}
+ if(n.length<8||!/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(n)||!/[0-9]/.test(n)){msg('La nueva contraseña debe tener mínimo 8 caracteres, con letras y números.');return}
+ if(n!==c){msg('La contraseña nueva y su repetición no coinciden.');return}
+ if(n===a){msg('La contraseña nueva debe ser distinta de la actual.');return}
+ btn.disabled=true;btn.textContent='Guardando…';
+ try{const v=await SB.auth.signInWithPassword({email:U.user.email,password:a});
+  if(v.error){msg(esRed(v.error)?'No hay conexión con el servidor.':'La contraseña actual no es correcta.');btn.disabled=false;btn.textContent='Guardar contraseña';return}
+  const {error}=await SB.auth.updateUser({password:n});if(error)throw error;
+  closeModal();toast('Contraseña cambiada. Úsala la próxima vez que entres.','ok')}
+ catch(err){console.error(err);msg(esRed(err)?'No hay conexión con el servidor.':/weak|pwned|short/i.test(String(err.message))?'Esa contraseña es muy débil o conocida. Elige otra.':'No se pudo cambiar: '+sbErr(err));btn.disabled=false;btn.textContent='Guardar contraseña'}};
+
+/* ---------- Anillo de almacenamiento (Ajustes) ---------- */
+let SB_USO=null,SB_USO_ERR=false;
+const mb=b=>b>=1073741824?(b/1073741824).toLocaleString('es-CO',{maximumFractionDigits:1})+' GB':(b/1048576).toLocaleString('es-CO',{maximumFractionDigits:b<10485760?1:0})+' MB';
+const usoCol=v=>v>=.9?'var(--er)':v>=.7?'var(--wa)':'var(--ok)';
+function usoCard(){
+ const it=(t,u,l)=>{const v=u/l;return`<div class="usoit">${ring(v,86,usoCol(v))}<div><b>${t}</b><small>${mb(u)} de ${mb(l)} usados</small></div></div>`};
+ let body;
+ if(SB_USO)body=`<div class="usoflex">${it('Base de datos',SB_USO.db_bytes,SB_USO.db_limite)}${it('Fotos y archivos',SB_USO.archivos_bytes,SB_USO.archivos_limite)}</div>`+
+  (Math.max(SB_USO.db_bytes/SB_USO.db_limite,SB_USO.archivos_bytes/SB_USO.archivos_limite)>=.8?`<div class="note" style="margin-top:14px">${icon('warn',16)}<span><b>El almacenamiento se está llenando.</b> Descarga una copia de seguridad y avisa a Gerencia para liberar espacio o subir de plan.</span></div>`:'');
+ else body=`<p class="mut">${SB_USO_ERR?'No se pudo leer el uso del almacenamiento.':'Leyendo el uso del almacenamiento…'}</p>`;
+ return`<div class="card" id="usoCard"><div class="ch"><div><h3>Almacenamiento</h3><p>Plan gratis de Supabase: 500 MB de base de datos y 1 GB de fotos y archivos. Verde: bien · amarillo: desde 70 % · rojo: desde 90 %.</p></div></div>${body}</div>`;
+}
+async function cargarUso(){if(!SB||!U.user)return;
+ try{const {data,error}=await SB.rpc('alm_uso_almacenamiento');if(error)throw error;SB_USO=data;SB_USO_ERR=false}catch(e){console.error(e);SB_USO_ERR=true}
+ const c=$('#usoCard');if(c)c.outerHTML=usoCard()}
+{const _aj=VIEWS.ajus;VIEWS.ajus=function(){setTimeout(cargarUso,30);return usoCard()+_aj()}}
 
 </script>
 </body>
