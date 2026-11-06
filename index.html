@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.2 · fase 2';
+const VERSION='3.3 · fase 2';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4001,9 +4001,9 @@ async function cargarDatos(){
  if(typeof c.logo==='string'&&c.logo)S.cfg.logo=c.logo;
  if(c.chatarra_precio_kg!=null)S.cfg.chatPrecio=+c.chatarra_precio_kg;
  if(Array.isArray(c.ventanas_pedido))S.cfg.vent=c.ventanas_pedido.map(v=>[v.desde,v.hasta]);
- S.mats=ma.filter(m=>m.activo).map(m=>({cod:m.cod,item:m.item_siesa||'',desc:m.descripcion,um:m.um,fam:m.familia,costo:+m.costo_siesa||0,stk:{},ub:{},src:'Siesa'}));
+ S.mats=ma.filter(m=>m.activo).map(m=>({cod:m.cod,item:m.item_siesa||'',desc:m.descripcion,um:m.um,fam:m.familia,costo:+m.costo_siesa||0,stk:{AL001:0},ub:{AL001:''},src:'Siesa'}));
  idx();
- ex.forEach(e=>{const m=MI[e.cod];if(!m)return;m.stk[e.bodega]=+e.cantidad||0;m.ub[e.bodega]=e.ubicacion||''});
+ ex.forEach(e=>{const m=MI[e.cod];if(!m)return;const q=+e.cantidad||0;if(e.bodega!=='AL001'&&!q)return;m.stk[e.bodega]=q;m.ub[e.bodega]=e.ubicacion||''});
  S.movs=mv.map(x=>({id:+x.id,f:x.fecha,t:x.tipo,cod:x.cod,desc:(MI[x.cod]||{}).desc||x.cod,um:x.um,q:+x.cantidad,bod:x.bodega,proy:x.proyecto,op:x.op,doc:x.documento,u:x.usuario,quien:x.quien_recibe,ej:false,cu:+x.costo_unit||0,sec:x.seccion,anul:x.anulado||undefined}));
  S.seq.mov=S.movs.reduce((a,x)=>Math.max(a,x.id),0);
 }
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Catálogo e inventario de Siesa.</b> Los materiales y existencias de MP001 y AL001 vienen de la base de datos de Latamks. Las operaciones (solicitudes, entregas, entradas, conteos…) todavía no se guardan: se activan fase por fase.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Catálogo e inventario de Siesa.</b> Los materiales y existencias vienen de Siesa y están en AL001 (almacén principal). Las operaciones (solicitudes, entregas, entradas, conteos…) todavía no se guardan: se activan fase por fase.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4189,19 +4189,22 @@ IMPF.mat.parse=function(rows){const h=hdr(rows,['REFERENCIA','EXISTENCIA']);if(!
   if(!MI[cod]){sinMaestro[cod]=1;return}
   const q=numv(r[ce]),fila=h.i+k+2;if(isNaN(q)){E.push('Fila '+fila+': '+cod+' sin existencia');return}if(q<0){E.push('Fila '+fila+': '+cod+' tiene existencia negativa en '+bod);return}
   if(vistos[cod+bod]){E.push('Fila '+fila+': '+cod+' en '+bod+' está repetida');return}vistos[cod+bod]=1;
-  L.push({cod,bod,q,act:(MI[cod].stk[bod]||0)})});
- return{ok:L.length>0&&!E.length,L,E,otras,sin:Object.keys(sinMaestro),dif:L.filter(l=>Math.abs(l.q-l.act)>1e-9)}};
+  L.push({cod,bod,q})});
+ /* Decisión 52: lo de MP001 y AL001 se suma y queda en AL001 */
+ const G={};L.forEach(l=>{const g=G[l.cod]||(G[l.cod]={cod:l.cod,q:0,mp:0});g.q+=l.q;if(l.bod==='MP001')g.mp+=l.q});
+ const A=Object.values(G).map(g=>Object.assign(g,{act:(MI[g.cod].stk.AL001||0)+(MI[g.cod].stk.MP001||0)}));
+ return{ok:L.length>0&&!E.length,L,A,E,otras,sin:Object.keys(sinMaestro),dif:A.filter(g=>Math.abs(g.q-g.act)>1e-9)}};
 IMPF.mat.prev=function(d){if(d.err)return errBox(d.err,[]);if(!S.mats.length)return errBox('Primero carga el maestro de Siesa con familias (botón «Cargar maestro de Siesa»).',[]);
  if(d.E.length)return errBox('Hay '+d.E.length+' filas con error:',d.E);
- const val=d.L.reduce((a,l)=>a+l.q*(MI[l.cod].costo||0),0);
- return`<div class="note">${icon('check',16)}<span><b>${d.L.length} líneas de MP001 y AL001.</b> ${d.dif.length} con existencia diferente: cada diferencia queda en el kárdex como «Ajuste · Carga desde Excel (Siesa)». ${d.L.length-d.dif.length} sin cambio. Valor total con costo Siesa: <b>${mm(val)}</b>.<br>Se omiten ${d.otras} líneas de otras bodegas${d.sin.length?` y ${d.sin.length} referencias que no están en el maestro (kits o servicios): ${d.sin.slice(0,5).map(esc).join(', ')}${d.sin.length>5?'…':''}`:''}.</span></div>`+
-  tbl(['Referencia','Descripción','Bodega','Antes','Siesa','Qué pasa'],d.dif.slice(0,12).map(l=>{const m=MI[l.cod];return[esc(l.cod),esc(m.desc),l.bod,qf(l.act,m.um),qf(l.q,m.um),`<span class="bd wa">Ajuste ${l.q-l.act>0?'+':''}${qf(l.q-l.act,m.um)}</span>`]}),[3,4])};
-IMPF.mat.applyDb=async function(d,archivo){const {data,error}=await SB.rpc('alm_importar_existencias',{p_filas:d.L.map(l=>({cod:l.cod,bod:l.bod,q:l.q})),p_archivo:archivo});if(error)throw error;return'Existencias cargadas: '+data.ajustes+' ajustes registrados en el kárdex.'};
+ const val=d.A.reduce((a,l)=>a+l.q*(MI[l.cod].costo||0),0);
+ return`<div class="note">${icon('check',16)}<span><b>${d.L.length} líneas de MP001 y AL001 → ${d.A.length} referencias en AL001 (almacén principal).</b> Lo de MP001 se suma a AL001. ${d.dif.length} con existencia diferente: cada diferencia queda en el kárdex como «Ajuste · Carga desde Excel (Siesa)». ${d.A.length-d.dif.length} sin cambio. Valor total con costo Siesa: <b>${mm(val)}</b>.<br>Se omiten ${d.otras} líneas de otras bodegas${d.sin.length?` y ${d.sin.length} referencias que no están en el maestro (kits o servicios): ${d.sin.slice(0,5).map(esc).join(', ')}${d.sin.length>5?'…':''}`:''}.</span></div>`+
+  tbl(['Referencia','Descripción','Bodega','Antes','Siesa (MP001 + AL001)','Qué pasa'],d.dif.slice(0,12).map(l=>{const m=MI[l.cod];return[esc(l.cod),esc(m.desc),'AL001',qf(l.act,m.um),qf(l.q,m.um),`<span class="bd wa">Ajuste ${l.q-l.act>0?'+':''}${qf(l.q-l.act,m.um)}</span>`]}),[3,4])};
+IMPF.mat.applyDb=async function(d,archivo){const {data,error}=await SB.rpc('alm_importar_existencias',{p_filas:d.L.map(l=>({cod:l.cod,bod:l.bod,q:l.q})),p_archivo:archivo});if(error)throw error;return'Existencias cargadas en AL001: '+data.ajustes+' ajustes'+(data.trasladados?' y '+data.trasladados+' traslados desde MP001':'')+' registrados en el kárdex.'};
 /* Recordar el nombre del archivo elegido */
 document.addEventListener('change',e=>{if(e.target&&e.target.id==='impF'&&e.target.files[0]&&IMP)IMP.archivo=e.target.files[0].name},true);
 ACT.imp=v=>{if(!can('mat.import')){toast('Solo Gerencia carga datos de Siesa.','wa');return}
  if(v==='maestro')impModal('maestro','Cargar maestro de Siesa (con familias)','Usa la matriz maestra: Item, Referencia, Desc. item, U.M., Tipo item, Costo prom. uni. y Familia (MATERIA PRIMA, ACCESORIOS o CONSUMIBLE). Los kits y servicios se omiten.');
- else if(v==='mat')impModal('mat','Cargar existencias de Siesa','Sirve el Excel de existencias tal como sale de Siesa (Item, Referencia, Bodega, Desc. item, U.M., Existencia…). Solo se toman MP001 y AL001.');
+ else if(v==='mat')impModal('mat','Cargar existencias de Siesa','Sirve el Excel de existencias tal como sale de Siesa (Item, Referencia, Bodega, Desc. item, U.M., Existencia…). Se toman MP001 y AL001 y todo queda en AL001 (almacén principal). CON01 y las demás bodegas no se cargan.');
  else impModal(v,'Cargar desde Excel','')};
 ACT.impApply=async()=>{if(!IMP||!IMP.data||!IMP.data.ok)return;const f=IMPF[IMP.kind];
  if(!f.applyDb){toast('Esta carga se activa en una fase siguiente.','wa');return}
