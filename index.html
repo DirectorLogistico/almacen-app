@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.6.1 · fase 3';
+const VERSION='3.7 · fase 3';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -2381,7 +2381,7 @@ VIEWS.ajus=function(){
  <div class="card"><div class="ch"><div><h3>Limpiar fotos de evidencia de entregas</h3><p>Borra las fotos para liberar espacio. Las entregas, cantidades y costos <b>no se borran</b>.</p></div></div>${fotoCleanUI()}</div>${papelCard()}
  <div class="card"><div class="ch"><div><h3>Datos ${BLANCO?'de la versión en blanco':'de la maqueta'}</h3><p>${BLANCO?'Aquí cargas todo desde cero para hacer pruebas reales.':'Los cambios que hagas se guardan solo en este navegador.'}</p></div></div><div class="acts"><button class="btn dng sm" data-act="askBlank">${icon('trash',14)}Borrar todo y empezar desde cero</button>${BLANCO?'':`<button class="btn ghost sm" data-act="askReset">Volver a los datos de ejemplo</button>`}</div><p class="mut3" style="font-size:12px;margin-top:10px">Se conservan los usuarios, el logo y el precio de la chatarra. Antes de borrar, descarga una copia de seguridad.</p></div>`:''}`;
 };
-const QRURL=location.origin+location.pathname+'#qr';
+let QRURL=location.origin+location.pathname+'#qr';
 function drawQR(){const e=$('#qrSol');if(e&&window.QRCode&&!e.firstChild)new QRCode(e,{text:QRURL,width:150,height:150,correctLevel:QRCode.CorrectLevel.M})}
 
 /* ================= Eventos ================= */
@@ -4371,6 +4371,81 @@ ACT.k1=()=>{const c=$('#kCod').value.trim().toUpperCase(),i=$('#kIni').value.tri
  if(K.step===4&&K.mode==='pedir'){const h=$('.kcard h2');if(h&&!$('#kSoloCons'))h.insertAdjacentHTML('afterend',`<div class="note" id="kSoloCons" style="margin:6px 0 10px">${icon('info',16)}<span>Puedes pedir <b>consumibles y EPP</b>. Los materiales del BOM los pide el líder de producción (Luis Sánchez).</span></div>`);
   $$('[data-kc]').forEach(x=>{const m=MI[x.dataset.kc];if(m&&!FAM_TEC.includes(m.fam)){const r=x.closest('.kli');if(r)r.remove()}})}}}
 {const _k5=ACT.k5;ACT.k5=async(v,el)=>{if(K.tec&&!K.tec.lider){const p=P(K.proy);const bad=Object.keys(K.sel).filter(c=>{const m=MI[c];return !m||!FAM_TEC.includes(m.fam)||(p&&p.bom.some(l=>l.cod===c))});if(bad.length){toast('Solo el líder de producción puede pedir '+bad.slice(0,3).map(esc).join(', ')+'. Tú puedes pedir consumibles y EPP.','er');return}}return _k5(v,el)}}
+
+/* ---------- QR del taller: solo con la sesión del líder (o Gerencia) · v3.6.2 ---------- */
+const ROL_QR=['Producción','Gerencia'];
+{const _rk2=renderKiosk;renderKiosk=function(){
+ if(U.user&&!ROL_QR.includes(U.user.rol)&&!window.QR_TOKEN){$('#app').className='app kiosk';
+  $('#app').innerHTML=`<div class="kwrap"><div class="kh"><img class="logoimg" src="${logoSrc()}" alt="" style="height:30px"><div><b>Solicitud de material</b><small>Taller Latamks</small></div><div class="sp"></div><button class="btn ghost sm" data-act="kioskOut">Volver a la app</button></div>
+  <div class="card kcard"><h2>Este QR es para el taller</h2><p class="mut" style="line-height:1.6">En este equipo está abierta la sesión de <b>${esc(U.user.nombre)}</b> (perfil ${esc(U.user.rol)}). Las solicitudes del taller se hacen con el usuario del <b>líder de producción</b> (liderpcc@latamks.com).</p>
+  <button class="btn big" data-act="qrCambiar" style="margin-top:14px">Cerrar sesión y entrar como líder de producción</button></div></div>`;return}
+ _rk2();
+ if(K.step===1){const pm=$('.kcard p.mut');if(pm)pm.textContent='Escribe tu código y tus iniciales, igual que en el QR de horas. Todos los técnicos pueden pedir consumibles y EPP; los materiales del BOM, devoluciones y daños los pide el líder de producción.';
+  $$('.kcard small, .kcard p').forEach(x=>{if(/Prueba con T-001/.test(x.textContent))x.remove()});
+  const c=$('#kCod');if(c)c.placeholder='TEC002';const i=$('#kIni');if(i)i.placeholder='JP'}
+ const s=$('.kh small');if(s&&U.user)s.textContent='Taller Latamks · sesión: '+U.user.nombre+(K.tec?' · '+K.tec.nombre:'');}}
+ACT.qrCambiar=async()=>{try{if(SB)await SB.auth.signOut()}catch(e){}U.user=null;U.kiosk=false;S=load();idx();saveUI();if(location.hash!=='#qr')location.hash='#qr';render()};
+
+/* ================= QR del taller sin inicio de sesión (v3.7 · decisión 67) =================
+   El QR lleva un código secreto de 64 caracteres: #qr=<código>.
+   Con él, cualquier celular abre la solicitud; el técnico se identifica con código + iniciales.
+   Solo existen dos puertas en la base: alm_kiosk_datos y alm_kiosk_solicitar. */
+const QRM=/^#qr=([0-9a-f]{64})$/i.exec(location.hash||'');
+window.QR_TOKEN=QRM?QRM[1].toLowerCase():'';
+let KQ={on:!!window.QR_TOKEN,tec:null};
+{const _r=render;render=function(){if(KQ.on){U.kiosk=true}return _r()}}
+if(KQ.on){U.kiosk=true;Object.assign(K,{step:1,tec:null,proy:null,sel:{},sec:null,q:''});window.SB_LISTO=true;render()}
+
+async function kqCargar(cod,ini){
+ const {data,error}=await SB.rpc('alm_kiosk_datos',{p_token:window.QR_TOKEN,p_cod:cod,p_ini:ini});if(error)throw error;
+ S=migrar(blankState());
+ S.mats=(data.materiales||[]).map(m=>({cod:m.cod,item:'',desc:m.desc,um:m.um,fam:m.fam,costo:0,stk:m.cl?{MP001:+m.disp||0}:{AL001:+m.disp||0},ub:{},src:'Siesa',cl:!!m.cl}));
+ const B={};(data.bom||[]).forEach(l=>{(B[l.proy]=B[l.proy]||[]).push({sec:l.sec,cod:l.cod,desc:l.desc,q:+l.q})});
+ S.proys=(data.proyectos||[]).map(p=>({id:p.id,op:p.op,desc:p.desc,modelo:p.modelo,estado:'Activo',cliente:'',creado:HOY,entrega:'',ot:{estado:'Liberada'},bom:B[p.id]||[],fotos:0,mb:0}));
+ let n=0;S.movs=(data.usado||[]).map(u=>({id:++n,f:HOY,t:'Salida',cod:u.cod,desc:'',um:'',q:+u.q,bod:'AL001',proy:u.proy,op:'',doc:'',u:'',ej:false,cu:0}));
+ S.tecs=[Object.assign({activo:true,tallas:{}},data.tec)];idx();
+ return S.tecs[0]}
+
+{const _k1=ACT.k1;ACT.k1=async(v,el)=>{if(!KQ.on)return _k1(v,el);
+ const c=$('#kCod').value.trim().toUpperCase(),i=$('#kIni').value.trim().toUpperCase();if(!c||!i){toast('Escribe tu código y tus iniciales.','er');return}
+ try{const t=await kqCargar(c,i);KQ.tec={cod:c,ini:i};K.tec=t;K.sel={};if(t.lider){K.step=2}else{K.mode='pedir';K.step=3}renderKiosk()}
+ catch(e){toast(sbErr(e),'er')}}}
+
+{const _k5=ACT.k5;ACT.k5=async(v,el)=>{if(!KQ.on)return _k5(v,el);
+ const p=P(K.proy);if(!p||!K.tec)return;
+ const L=Object.entries(K.sel).map(([cod,q])=>({cod,q:+q})).filter(l=>l.q>0);if(!L.length){toast('Elige al menos un material.','er');return}
+ if(!K.tec.lider){const bad=L.filter(l=>{const m=MI[l.cod];return !m||!FAM_TEC.includes(m.fam)||p.bom.some(b=>b.cod===l.cod)});if(bad.length){toast('Solo el líder de producción puede pedir '+bad.slice(0,3).map(l=>esc(l.cod)).join(', ')+'.','er');return}}
+ const fv=!enVentana();const razon=fv?(($('#kFv')||{value:''}).value||'').trim():'';if(fv&&razon.length<6){toast('Está fuera de la ventana de pedidos: escriba por qué no puede esperar.','er');return}
+ const compSec=L.some(l=>famTab(M(l.cod),p)==='comp')&&K.sec;
+ await sbAccion(el,'Enviando…',async()=>{const {data,error}=await SB.rpc('alm_kiosk_solicitar',{p_token:window.QR_TOKEN,p:{proy:p.id,sec:compSec||K.tec.sec||'General',pide_cod:KQ.tec.cod,pide_ini:KQ.tec.ini,urg:fv?'Urgente':(($('#kUrg')||{value:'Normal'}).value),fv,razon_fv:razon,nota:(($('#kNota')||{value:''}).value||'').trim(),lineas:L}});if(error)throw error;
+  try{await kqCargar(KQ.tec.cod,KQ.tec.ini)}catch(e){}
+  K.done='Solicitud '+data.id+' enviada';K.doneMsg='Almacén ya la ve en Solicitudes. Te avisan cuando esté lista para recoger.';K.step=6;renderKiosk()})}}
+
+/* Salir del QR: vuelve a «¿Quién es?» (o a la app si hay sesión abierta en este equipo) */
+{const _ko=ACT.kioskOut;ACT.kioskOut=async()=>{if(!KQ.on)return _ko();
+ if(U.user){KQ.on=false;window.QR_TOKEN='';U.kiosk=false;try{history.replaceState(null,'',location.pathname)}catch(e){}try{await cargarDatos()}catch(e){}render();return}
+ Object.assign(K,{step:1,tec:null,proy:null,mode:null,sel:{},sec:null,q:''});KQ.tec=null;S=load();idx();renderKiosk()}}
+{const _kn=ACT.kNew;ACT.kNew=(v,el)=>{_kn(v,el);if(KQ.on&&K.tec&&!K.tec.lider){K.mode='pedir';K.step=3;renderKiosk()}}}
+
+/* Devolver y daños todavía no se guardan: no se ofrecen en el QR hasta su fase */
+{const _rk=renderKiosk;renderKiosk=function(){_rk();if(K.step===2){$$('[data-act="kMode"][data-v="dev"],[data-act="kMode"][data-v="fdp"]').forEach(b=>b.remove());const o=$('.kopts');if(o&&!$('#kPronto'))o.insertAdjacentHTML('afterend','<p class="mut3" id="kPronto" style="font-size:12.5px;margin-top:10px">Devolver material y reportar daño o pérdida se activan en la próxima fase.</p>')}
+ if(KQ.on){const s=$('.kh small');if(s)s.textContent='Taller Latamks · QR de solicitud'+(K.tec?' · '+K.tec.nombre:'');const b=$('.kh [data-act="kioskOut"]');if(b)b.textContent=U.user?'Volver a la app':(K.tec?'Salir':'')}}}
+
+/* ---------- Ajustes: el QR con su código (solo Gerencia) ---------- */
+let QR_GER='';
+async function qrTraer(){if(!U.user||U.user.rol!=='Gerencia'||KQ.on)return;try{const {data,error}=await SB.rpc('alm_qr_actual');if(error)throw error;QR_GER=data||'';qrPintar()}catch(e){console.error(e)}}
+function qrPintar(){const e=$('#qrSol');if(!e)return;const card=e.closest('.card');
+ if(!U.user||U.user.rol!=='Gerencia'){if(!e.dataset.sb){e.dataset.sb='1';e.innerHTML='<p class="mut" style="max-width:220px;font-size:13px">Solo Gerencia ve, descarga y cambia el QR del taller.</p>';const d=card&&card.querySelector('[data-act="qrSolDl"]');if(d)d.remove()}return}
+ if(!QR_GER)return;QRURL=location.origin+location.pathname+'#qr='+QR_GER;
+ if(e.dataset.tok!==QR_GER&&window.QRCode){e.innerHTML='';new QRCode(e,{text:QRURL,width:150,height:150,correctLevel:QRCode.CorrectLevel.M});e.dataset.tok=QR_GER}
+ const acts=card&&card.querySelector('.acts');if(acts&&!acts.querySelector('[data-act="qrNuevo"]'))acts.insertAdjacentHTML('beforeend',`<button class="btn ghost sm" data-act="qrNuevo">${icon('redo',16)}Generar QR nuevo</button>`);
+ const p=card&&card.querySelector('.ch p');const T='Para pegar en el taller. Cualquier técnico lo escanea desde su celular, sin contraseña: pide con su código e iniciales. Si una foto del QR sale de la planta, genera uno nuevo.';if(p&&p.textContent!==T)p.textContent=T}
+ACT.qrNuevo=()=>ask('Generar un QR nuevo','El QR que está pegado en el taller dejará de funcionar de inmediato. Tendrás que imprimir y pegar el nuevo.','Generar QR nuevo','qrNuevoGo','');
+ACT.qrNuevoGo=async(v,el)=>{await sbAccion(el,'Generando…',async()=>{const {data,error}=await SB.rpc('alm_qr_generar');if(error)throw error;QR_GER=data;closeModal();rerender();setTimeout(qrPintar,50);toast('QR nuevo generado. Descárgalo e imprímelo: el anterior ya no sirve.','ok')})};
+new MutationObserver(()=>{if(U.user&&U.view==='ajus'&&!KQ.on){if(!QR_GER&&U.user.rol==='Gerencia'&&!qrTraer.p){qrTraer.p=1;qrTraer().finally(()=>qrTraer.p=0)}else qrPintar()}}).observe(document.body,{childList:true,subtree:true});
+drawQR=function(){qrPintar()};
+/* Logo de la empresa también en celulares sin sesión */
+if(KQ.on&&SB){SB.rpc('alm_kiosk_logo',{p_token:window.QR_TOKEN}).then(({data})=>{if(data){S.cfg.logo=data;try{localStorage.setItem(LKEY,data)}catch(e){}if(KQ.on)renderKiosk()}}).catch(()=>{})}
 
 /* ================= Informe ejecutivo (v3.4) =================
    Botón «Informe ejecutivo» en el Tablero, como en la app HH:
