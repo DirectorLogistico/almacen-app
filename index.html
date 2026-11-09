@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.8 · fase 4';
+const VERSION='3.9 · fase 4';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Devoluciones y daño o pérdida activos.</b> Inventario de Siesa en AL001, proyectos, BOM, liberación de la OT, solicitudes, entregas, devoluciones y daños o pérdidas se guardan en la base de datos. Las demás operaciones (entradas, conteos, excedentes…) todavía no se guardan: se activan fase por fase.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Devoluciones, daño o pérdida, excedentes y correcciones del BOM activos.</b> Inventario de Siesa en AL001, proyectos, BOM, liberación de la OT, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y «El BOM tiene un error» se guardan en la base de datos. Las demás operaciones (entradas, conteos, kits…) todavía no se guardan: se activan fase por fase.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4406,6 +4406,7 @@ async function kqCargar(cod,ini){
  /* v3.8: lo que el líder tiene en planta, para devolver o reportar daño */
  (data.entregado||[]).forEach(e=>{if(!S.mats.some(m=>m.cod===e.cod))S.mats.push({cod:e.cod,item:'',desc:e.desc,um:e.um,fam:e.fam,costo:0,stk:{AL001:0},ub:{},src:'Siesa'})});
  KQ.ent=(data.entregado||[]).map((e,i)=>({id:i+1,f:HOY,t:'Salida',cod:e.cod,desc:e.desc,um:e.um,q:+e.q,bod:'AL001',proy:e.proy,op:'',doc:'',u:'',ej:false,cu:0}));
+ S.bomc=(data.bomc||[]).map(b=>({id:b.id,proy:b.proy,cod:b.cod,estado:b.estado}));/* v3.9: correcciones del BOM pendientes */
  S.tecs=[Object.assign({activo:true,tallas:{}},data.tec)];idx();
  return S.tecs[0]}
 
@@ -4724,7 +4725,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -4736,6 +4737,76 @@ ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
   if(await saveFile('Copia_Latamks_Almacen_'+fstamp()+'.sql',new Blob([t],{type:'application/sql'}))){try{localStorage.setItem(CKEY,HOY)}catch(e){}rerender()}}
  catch(e){console.error(e);toast('No se pudo generar la copia: '+sbErr(e),'er')}
  finally{if(el)el.disabled=false}};
+
+/* ================= Fase 4 (parte B) · Excedentes y «El BOM tiene un error» (v3.9) =================
+   La interfaz es la de la maqueta (app2.js: solEd, solRev; app13.js: bomErrForm, bcCard, bcRes).
+   - Excedente: Producción o Gerencia editan la solicitud; lo que pasa del BOM exige motivo y razón,
+     va a «Por aprobar» y Gerencia lo aprueba (se suma al tope del BOM) o lo rechaza.
+   - «El BOM tiene un error»: Producción, Gerencia o Luis por el QR lo reportan; Gerencia corrige
+     el BOM y, si hace falta, crea una solicitud urgente. Queda el historial antes → después. */
+
+/* ---------- Leer solicitudes (campos nuevos) y correcciones del BOM ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [sx,bc]=await Promise.all([
+  leerTodo('alm_solicitudes','id,exc_motivo,exc_razon,aprob_ok,aprobo,aprobado_en,aprob_obs,editada_por,editada_en,bc,canal','id'),
+  leerTodo('alm_bom_correcciones','id,fecha,hora,proyecto,cod,seccion,tipo,q_bom,q_nueva,cantidad,motivo,pide,canal,estado,cod_final,q_antes,q_despues,resolucion,resolvio,resuelto_en,solicitud','id')]);
+ const X={};sx.forEach(r=>X[r.id]=r);
+ S.sols.forEach(s=>{const r=X[s.id];if(!r)return;s.motivo=r.exc_motivo||'';s.razon=r.exc_razon||'';
+  s.aprob=r.aprob_ok==null?null:{ok:r.aprob_ok,por:r.aprobo,f:(r.aprobado_en||'').slice(0,10),obs:r.aprob_obs};
+  if(r.editada_por)s.editada={por:r.editada_por,f:(r.editada_en||'').slice(0,16).replace('T',' ')};if(r.bc)s.bc=r.bc;s.canal=r.canal});
+ S.bomc=bc.map(b=>({id:b.id,f:b.fecha,h:b.hora,proy:b.proyecto,cod:b.cod,desc:(MI[b.cod]||{}).desc||b.cod,sec:b.seccion,tipo:b.tipo,qBom:+b.q_bom||0,qNueva:b.q_nueva==null?null:+b.q_nueva,q:+b.cantidad||0,motivo:b.motivo,pide:b.pide,
+  estado:b.estado,res:b.resolucion,fres:(b.resuelto_en||'').slice(0,10),ures:b.resolvio,codFin:b.cod_final,sol:b.solicitud})).sort((a,b)=>b.id.localeCompare(a.id));
+ /* Historial de cambios del BOM: sale de las correcciones aprobadas */
+ S.proys.forEach(p=>{p.bomLog=S.bomc.filter(b=>b.proy===p.id&&b.estado==='Aprobada').slice().reverse().map(b=>({f:b.fres,h:'',u:b.ures,t:`${b.id}: ${b.codFin||b.cod} · ${b.res} (${b.tipo})`}))});
+}}
+
+/* Tope del BOM igual al de la base de datos: todo código que está en el BOM tiene tope
+   (accesorios, materia prima y piezas CL; documento 01, 6.5). La maqueta solo topaba accesorios y CL.
+   Al editar, el disponible no cuenta la aprobación de la propia solicitud (al editarla se pierde). */
+const enBomReal=(proy,cod)=>{const p=P(proy);return !!(p&&p.bom&&p.bom.some(l=>l.cod===cod))};
+topeBOM=function(proy,cod){if(!enBomReal(proy,cod))return null;return Math.max(0,bomQ(P(proy),cod)+fdpQ(proy,cod)+excAprob(proy,cod)-(entregado(proy)[cod]||0))};
+dispBOM=function(proy,cod,excl){if(!enBomReal(proy,cod))return null;const s=excl?S.sols.find(x=>x.id===excl):null;
+ const own=s&&s.aprob&&s.aprob.ok?s.lineas.filter(l=>l.cod===cod).reduce((a,l)=>a+(l.exc||0),0):0;
+ return Math.max(0,bomQ(P(proy),cod)+fdpQ(proy,cod)+excAprob(proy,cod)-own-(entregado(proy)[cod]||0)-pendSol(proy,cod,excl))};
+
+/* ---------- Editar solicitud (Producción o Gerencia) ---------- */
+ACT.solEdSave=async(v,el)=>{const s=S.sols.find(x=>x.id===SED.id);if(!s)return;const L=SED.lineas.filter(l=>l.q>0);if(!L.length){toast('La solicitud debe tener al menos un material.','er');return}
+ const ex=L.some(l=>{const d=dispBOM(s.proy,l.cod,s.id);return d!=null&&l.q>d+1e-9});
+ const motivo=($('#sMot')||{value:''}).value,razon=(($('#sRaz')||{value:''}).value||'').trim();
+ if(ex&&razon.length<8){toast('Escribe la razón por la que se pide más de lo que lleva el BOM.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_sol_editar',{p_id:s.id,p:{lineas:L.map(l=>({cod:l.cod,q:+l.q})),motivo,razon}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(s.id+(data.excede?' enviada a Gerencia para aprobación: pide más de lo que lleva el BOM.':' actualizada.'),'ok')})};
+ACT.solEd=v=>{const s=S.sols.find(x=>x.id===v);if(!s)return;if(!can('sol.edit')){toast('Solo el líder de producción o Gerencia editan solicitudes.','wa');return}
+ if(s.aprob&&s.aprob.ok&&s.lineas.some(l=>l.exc))toast('Esta solicitud ya tiene un excedente aprobado. Si la editas, lo que pase del BOM vuelve a Gerencia.','wa');solEd(v)};
+
+/* ---------- Gerencia aprueba o rechaza el excedente ---------- */
+ACT.solApr=async(v,el)=>{const [id,ok]=v.split('|');const obs=(($('#saObs')||{value:''}).value||'').trim();
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_sol_aprobar',{p_id:id,p_ok:ok==='1',p_obs:obs});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(id+(ok==='1'?' aprobada. Pasa a almacén para entregar; lo aprobado se suma al tope del BOM.':' rechazada.'),'ok')})};
+
+/* ---------- «El BOM tiene un error»: reportar (QR o app) ---------- */
+ACT.kBomGo=async(v,el)=>{const p=P(K.proy);if(!p)return;const g=x=>($('#'+x)||{}).value||'';const cod=g('beC').trim(),q=numv(g('beQ')),qnT=g('beN').trim(),mot=g('beM').trim();
+ if(!cod){toast('Escriba el código.','er');return}if(mot.length<6){toast('Explique el error.','er');return}if(!(q>=0)){toast('Revise la cantidad.','er');return}
+ const datos={proy:p.id,tipo:g('beT'),cod,sec:g('beS'),q:q||0,q_nueva:qnT===''?null:numv(qnT),motivo:mot};
+ const kq=typeof KQ!=='undefined'&&KQ.on;
+ await sbAccion(el,'Enviando…',async()=>{let r;
+  if(kq)r=await SB.rpc('alm_kiosk_bom_error',{p_token:window.QR_TOKEN,p:Object.assign({pide_cod:KQ.tec.cod,pide_ini:KQ.tec.ini},datos)});
+  else r=await SB.rpc('alm_bom_error',{p:Object.assign({pide:K.tec?K.tec.nombre:''},datos)});
+  if(r.error)throw r.error;
+  if(kq){try{await kqCargar(KQ.tec.cod,KQ.tec.ini)}catch(e){}}else await cargarDatos();
+  toast(`${r.data.id} enviada a Gerencia. Siga con el resto del pedido.`,'ok');K.mode='pedir';K.bomCod='';K.step=4;renderKiosk()})};
+
+/* ---------- Gerencia corrige el BOM ---------- */
+ACT.bcGo=async(v,el)=>{const [id,ok]=v.split('|');const g=x=>($('#'+x)||{}).value||'';const nota=g('bcR').trim();
+ if(ok==='no'&&nota.length<4){toast('Escriba por qué se rechaza.','er');return}
+ const cod=g('bcC').trim(),qn=numv(g('bcN')),qe=numv(g('bcQ'))||0;
+ if(ok==='si'&&(!cod||isNaN(qn)||qn<=0)){toast('Revise el código y la cantidad total (mayor que 0).','er');return}
+ await sbAccion(el,ok==='si'?'Corrigiendo…':'Rechazando…',async()=>{const {data,error}=await SB.rpc('alm_bom_resolver',{p_id:id,p_ok:ok==='si',p:{cod,sec:g('bcS'),q_total:qn,entregar:qe,nota}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();
+  toast(ok==='si'?`BOM corregido: ${esc(cod)} ${qf(+data.antes)} → ${qf(+data.despues)}${data.solicitud?' y '+data.solicitud+' creada para almacén':''}.`:id+' rechazada.','ok')})};
+
+/* ---------- Editar el BOM a mano: pasa por la corrección, que deja historial ---------- */
+['bomEd','bomDel'].forEach(a=>{ACT[a]=()=>toast('Para cambiar el BOM usa «El BOM tiene un error» (Solicitudes › Nueva solicitud): Gerencia lo corrige y queda el historial antes → después.','wa')});
 
 </script>
 </body>
