@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.5 · fase 2';
+const VERSION='3.6.1 · fase 3';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -1653,7 +1653,7 @@ const famTab=(m,p)=>m.fam==='Consumibles'?'cons':['EPP','Dotación','Herramienta
 function renderKiosk(){
  $('#app').className='app kiosk';
  const p=K.proy&&P(K.proy);
- const head=`<div class="kh"><img class="logoimg" src="${logoSrc()}" alt="" style="height:30px"><div><b>${K.mode==='dev'?'Devolver material':K.mode==='fdp'?'Reportar daño o pérdida':'Solicitud de material'}</b><small>Taller Latamks · sin contraseña${K.tec?' · '+esc(K.tec.nombre):''}</small></div><div class="sp"></div><button class="btn ghost sm" data-act="kioskOut">${U.user?'Volver a la app':'Salir'}</button></div>`;
+ const head=`<div class="kh"><img class="logoimg" src="${logoSrc()}" alt="" style="height:30px"><div><b>${K.mode==='dev'?'Devolver material':K.mode==='fdp'?'Reportar daño o pérdida':'Solicitud de material'}</b><small>Taller Latamks · con el usuario del líder${K.tec?' · '+esc(K.tec.nombre):''}</small></div><div class="sp"></div><button class="btn ghost sm" data-act="kioskOut">${U.user?'Volver a la app':'Salir'}</button></div>`;
  let b='';
  if(K.step===1)b=`<h2>¿Quién es?</h2><p class="mut">Escribe tu código y tus iniciales, igual que en el QR de horas. Solo los líderes de producción pueden pedir, devolver y reportar.</p>
  <div class="two"><div class="fld"><label for="kCod">Código</label><input class="inp big" id="kCod" placeholder="T-001" autocomplete="off"></div><div class="fld"><label for="kIni">Iniciales</label><input class="inp big" id="kIni" placeholder="LS" maxlength="4" autocomplete="off"></div></div>
@@ -3970,7 +3970,7 @@ VIEWS.ajw=function(){const f=U.f;const d=f.ajD||addD(HOY,-90),h=f.ajH||HOY;const
    En la fase 1 la app es de solo lectura: nada se guarda en el navegador ni en la base. */
 const SB_URL='https://atcmxuzlxvzijifcggzt.supabase.co';
 const SB_KEY='sb_publishable_mUcOwdElBtS7WgByHBiYAA_Bw3XsBuj';
-const SB_FASE='Fase 2';
+const SB_FASE='Fase 3';
 const INACT_MS=12*3600*1000,AKEY='latamks_alm_ultima_actividad';
 const ROLES_TODOS=['Gerencia','Auxiliar','Inventario','Auditoría','Producción','Calidad','Diseño','Compras'];
 
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Catálogo e inventario de Siesa.</b> Los materiales y existencias vienen de Siesa y están en AL001 (almacén principal). Las operaciones (solicitudes, entregas, entradas, conteos…) todavía no se guardan: se activan fase por fase.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Solicitudes y entregas activas.</b> Inventario de Siesa en AL001, proyectos, BOM, liberación de la OT, solicitudes y entregas se guardan en la base de datos. Las demás operaciones (devoluciones, entradas, conteos…) todavía no se guardan: se activan fase por fase.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4249,14 +4249,14 @@ let EQDB={};
 const nDesc=s=>String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();
 {const _cd=cargarDatos;cargarDatos=async function(){await _cd();
  const [pr,bo,eq,ex]=await Promise.all([
-  leerTodo('alm_proyectos','id,op,cliente,descripcion,modelo,estado,inicio,entrega,vin,po,oc_fecha,oc_valor,ot_estado','id'),
+  leerTodo('alm_proyectos','id,op,cliente,descripcion,modelo,estado,inicio,entrega,vin,po,oc_fecha,oc_valor,ot_estado,ot_por,ot_fecha','id'),
   leerTodo('alm_bom','id,proyecto,orden,seccion,cod,cod_bom,descripcion,cantidad,nota','id'),
   leerTodo('alm_equivalencias','clave,cod','clave'),
   leerTodo('alm_materiales','cod,origen,es_pieza_corte','cod')]);
  ex.forEach(x=>{const m=MI[x.cod];if(!m)return;m.src=x.origen||'Siesa';if(x.es_pieza_corte){m.cl=true;if(!(m.stk.AL001>0)){delete m.stk.AL001;delete m.ub.AL001}if(m.stk.MP001==null){m.stk.MP001=0;m.ub.MP001=m.ub.MP001||''}}});
  EQDB={};eq.forEach(e=>EQDB[e.clave]=e.cod);
  const B={};bo.forEach(l=>{(B[l.proyecto]=B[l.proyecto]||[]).push({sec:l.seccion,cod:l.cod,desc:l.descripcion||(MI[l.cod]||{}).desc||l.cod,q:+l.cantidad,nota:l.nota||undefined,codBom:l.cod_bom||undefined})});
- S.proys=pr.map(p=>({id:p.id,op:p.op,cliente:p.cliente,desc:p.descripcion,modelo:p.modelo,estado:p.estado,creado:p.inicio,entrega:p.entrega||'',vin:p.vin,po:p.po,ocCli:{f:p.oc_fecha||'',valor:+p.oc_valor||0},ot:{estado:p.ot_estado||'Borrador',f:p.inicio},fotos:0,mb:0,bom:(B[p.id]||[]).map(l=>{if(!l.nota)delete l.nota;if(!l.codBom)delete l.codBom;return l}),bomLog:[]})).sort((a,b)=>b.id.localeCompare(a.id));
+ S.proys=pr.map(p=>({id:p.id,op:p.op,cliente:p.cliente,desc:p.descripcion,modelo:p.modelo,estado:p.estado,creado:p.inicio,entrega:p.entrega||'',vin:p.vin,po:p.po,ocCli:{f:p.oc_fecha||'',valor:+p.oc_valor||0},ot:p.ot_estado==='Liberada'?{estado:'Liberada',por:p.ot_por,f:(p.ot_fecha||'').slice(0,10),h:(p.ot_fecha||'').slice(11,16),num:p.op}:{estado:p.ot_estado||'Borrador',f:p.inicio},fotos:0,mb:0,bom:(B[p.id]||[]).map(l=>{if(!l.nota)delete l.nota;if(!l.codBom)delete l.codBom;return l}),bomLog:[]})).sort((a,b)=>b.id.localeCompare(a.id));
 }}
 
 /* ---------- Lector del BOM de Diseño ---------- */
@@ -4307,6 +4307,70 @@ ACT.saveP=async(v,el)=>{
   await cargarDatos();closeModal();U.view='proy';U.pj=id;U.tab.pj='bom';rerender();
   toast('Proyecto '+id+' guardado con '+data.lineas+' líneas de BOM'+(data.materiales_nuevos?' · '+data.materiales_nuevos+' piezas o materiales nuevos':'')+(eqv.length?' · '+eqv.length+' equivalencias guardadas':'')+'.','ok')}
  catch(e){console.error(e);toast('No se pudo guardar el proyecto: '+sbErr(e),'er');if(el){el.disabled=false;el.textContent='Crear proyecto'}}};
+
+/* ================= Fase 3 · OT, técnicos, solicitudes y entregas (v3.6) =================
+   Todo lo que mueve inventario pasa por funciones de Supabase que validan el perfil,
+   la OT liberada, el tope del BOM y la existencia. La app solo pinta lo que la base devuelve. */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [te,so]=await Promise.all([
+  leerTodo('alm_tecnicos','cod,nombre,ini,cargo,sec,lider,activo,tallas','cod'),
+  leerTodo('alm_solicitudes','id,fecha,hora,proyecto,seccion,pide,pide_cod,estado,urg,fuera_ventana,razon_fv,nota,recibe,fent,lineas','id')]);
+ S.tecs=te.map(t=>({cod:t.cod,nombre:t.nombre,ini:t.ini,cargo:t.cargo,sec:t.sec,lider:t.lider,activo:t.activo,tallas:t.tallas||{},ej:false}));
+ S.sols=so.map(s=>({id:s.id,f:s.fecha,h:s.hora,proy:s.proyecto,sec:s.seccion,pide:s.pide,pideCod:s.pide_cod,lineas:(s.lineas||[]).map(l=>({cod:l.cod,q:+l.q,ent:+l.ent||0,exc:+l.exc||0})),estado:s.estado,motivo:'',razon:'',recibe:s.recibe,fent:s.fent||null,urg:s.urg,fv:s.fuera_ventana,fvr:s.razon_fv,nota:s.nota,ej:false})).sort((a,b)=>b.id.localeCompare(a.id));
+ const n=S.sols.reduce((a,s)=>Math.max(a,+(s.id.split('-')[1])||0),0);S.seq.sol=n;
+}}
+
+/* Solo Gerencia libera la OT (decisión 60) */
+PERM['Diseño']=PERM['Diseño'].filter(x=>x!=='ot.lib');
+/* Las piezas CL no bloquean la OT (decisión 59) */
+otNoSiesa=function(p){return p.bom.filter(l=>{const m=MI[l.cod];return !esSiesa(m)&&!(m&&m.cl)})};
+const sbAccion=async(el,txt,fn)=>{const old=el?el.innerHTML:'';if(el){el.disabled=true;el.textContent=txt}
+ try{await fn();return true}catch(e){console.error(e);toast(sbErr(e),'er');return false}finally{if(el&&document.body.contains(el)){el.disabled=false;el.innerHTML=old}}};
+ACT.otLib=v=>{if(!can('ot.lib')){toast('Solo Gerencia libera la OT.','wa');return}otLib(v)};
+ACT.otLibGo=async(v,el)=>{await sbAccion(el,'Liberando…',async()=>{const {error}=await SB.rpc('alm_liberar_ot',{p_proy:v});if(error)throw error;await cargarDatos();closeModal();rerender();toast('OT de '+v+' liberada: producción ya puede pedir material.','ok')})};
+
+/* Solicitud desde el QR o la app (solo el líder de producción, decisión 62) */
+ACT.k5=async(v,el)=>{const p=P(K.proy);if(!p||!K.tec)return;
+ const L=Object.entries(K.sel).map(([cod,q])=>({cod,q:+q})).filter(l=>l.q>0);if(!L.length){toast('Elige al menos un material.','er');return}
+ const fv=!enVentana();const razon=fv?($('#kFv').value||'').trim():'';if(fv&&razon.length<6){toast('Está fuera de la ventana de pedidos: escriba por qué no puede esperar.','er');return}
+ const compSec=L.some(l=>famTab(M(l.cod),p)==='comp')&&K.sec;
+ await sbAccion(el,'Enviando…',async()=>{const {data,error}=await SB.rpc('alm_sol_crear',{p:{proy:p.id,sec:compSec||K.tec.sec||'General',pide_cod:K.tec.cod,pide_ini:K.tec.ini,urg:fv?'Urgente':$('#kUrg').value,fv,razon_fv:razon,nota:($('#kNota')||{value:''}).value.trim(),lineas:L}});if(error)throw error;
+  await cargarDatos();K.done='Solicitud '+data.id+' enviada';K.doneMsg='Almacén ya la ve en Solicitudes. Te avisan cuando esté lista para recoger.';K.step=6;renderKiosk()})};
+
+/* Preparar y entregar (Auxiliar o Gerencia) */
+ACT.prepSol=async(v,el)=>{await sbAccion(el,'…',async()=>{const {error}=await SB.rpc('alm_sol_preparar',{p_id:v});if(error)throw error;await cargarDatos();rerender();toast(v+' en preparación.','i')})};
+ACT.doEnt=async(v,el)=>{const s=S.sols.find(x=>x.id===v);if(!s)return;const rec=($('#eRec')||{value:''}).value.trim();if(!rec){toast('Indica quién recibe el material.','er');return}
+ const ent=s.lineas.map((l,i)=>({i,q:parseFloat(($('#eq'+i)||{value:0}).value)||0})).filter(x=>x.q>0);if(!ent.length){toast('No hay cantidades para entregar.','er');return}
+ await sbAccion(el,'Entregando…',async()=>{const {data,error}=await SB.rpc('alm_sol_entregar',{p_id:v,p_ent:ent,p_recibe:rec});if(error)throw error;
+  if(EVD&&EVD.length)toast('Las fotos de evidencia se guardan desde la fase de fotos; esta entrega quedó sin foto.','wa');
+  await cargarDatos();closeModal();rerender();toast(`${v}: entrega registrada y cargada al proyecto ${s.proy} (${mm(data.valor)} a costo Siesa)${data.completa?'':' · quedó parcial'}.`,'ok')})};
+
+/* ---------- Logo de la empresa para todos (decisión 63) ----------
+   Gerencia lo cambia en Ajustes; queda en la base de datos y cada equipo lo recuerda
+   para mostrarlo también en la pantalla de entrada. */
+const LKEY='latamks_alm_logo';
+const logoCache=()=>{try{return localStorage.getItem(LKEY)||''}catch(e){return''}};
+{const _ld=load;load=function(){const s=_ld();const c=logoCache();if(c)s.cfg.logo=c;return s}}
+{const c=logoCache();if(c&&S&&S.cfg)S.cfg.logo=c;}
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();try{if(S.cfg.logo)localStorage.setItem(LKEY,S.cfg.logo);else localStorage.removeItem(LKEY)}catch(e){}}}
+function logoReducir(file){return new Promise((res,rej)=>{const rd=new FileReader();rd.onerror=()=>rej(new Error('No se pudo leer la imagen'));rd.onload=()=>{const im=new Image();im.onerror=()=>rej(new Error('El archivo no es una imagen'));im.onload=()=>{const k=Math.min(1,480/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/png'))};im.src=rd.result};rd.readAsDataURL(file)})}
+async function logoGuardar(data){const {error}=await SB.rpc('alm_guardar_logo',{p_logo:data});if(error)throw error;await cargarDatos();rerender()}
+document.addEventListener('change',async e=>{if(!e.target||e.target.id!=='logoF')return;e.stopImmediatePropagation();const f=e.target.files[0];if(!f)return;
+ if(!U.user||U.user.rol!=='Gerencia'){toast('Solo Gerencia cambia el logo.','wa');return}
+ try{const d=await logoReducir(f);await logoGuardar(d);toast('Logo guardado: todos los usuarios lo verán al entrar.','ok')}catch(x){console.error(x);toast('No se pudo guardar el logo: '+sbErr(x),'er')}},true);
+ACT.logoReset=async()=>{if(!U.user||U.user.rol!=='Gerencia'){toast('Solo Gerencia cambia el logo.','wa');return}try{await logoGuardar('');toast('Se volvió al logo anterior.','ok')}catch(x){toast(sbErr(x),'er')}};
+
+/* ---------- Decisión 65: técnicos piden consumibles y EPP; el BOM solo el líder ---------- */
+const FAM_TEC=['Consumibles','EPP'];
+ACT.k1=()=>{const c=$('#kCod').value.trim().toUpperCase(),i=$('#kIni').value.trim().toUpperCase();const t=S.tecs.find(t=>t.cod===c&&t.ini.toUpperCase()===i&&t.activo);
+ if(!t){toast('Código o iniciales no coinciden.','er');return}K.tec=t;K.step=2;if(!t.lider){K.mode='pedir';K.step=3;K.sel={}}renderKiosk()};
+{const _rk=renderKiosk;renderKiosk=function(){const sl=K.tec&&!K.tec.lider;
+ if(sl&&K.step===4&&K.mode==='pedir'&&(!K.tab||K.tab==='comp'||K.tab==='svc'))K.tab='cons';
+ _rk();if(!sl)return;
+ $$('[data-act="kTab"][data-v="comp"],[data-act="kTab"][data-v="svc"]').forEach(b=>b.remove());
+ if(K.step===4&&K.mode==='pedir'){const h=$('.kcard h2');if(h&&!$('#kSoloCons'))h.insertAdjacentHTML('afterend',`<div class="note" id="kSoloCons" style="margin:6px 0 10px">${icon('info',16)}<span>Puedes pedir <b>consumibles y EPP</b>. Los materiales del BOM los pide el líder de producción (Luis Sánchez).</span></div>`);
+  $$('[data-kc]').forEach(x=>{const m=MI[x.dataset.kc];if(m&&!FAM_TEC.includes(m.fam)){const r=x.closest('.kli');if(r)r.remove()}})}}}
+{const _k5=ACT.k5;ACT.k5=async(v,el)=>{if(K.tec&&!K.tec.lider){const p=P(K.proy);const bad=Object.keys(K.sel).filter(c=>{const m=MI[c];return !m||!FAM_TEC.includes(m.fam)||(p&&p.bom.some(l=>l.cod===c))});if(bad.length){toast('Solo el líder de producción puede pedir '+bad.slice(0,3).map(esc).join(', ')+'. Tú puedes pedir consumibles y EPP.','er');return}}return _k5(v,el)}}
 
 /* ================= Informe ejecutivo (v3.4) =================
    Botón «Informe ejecutivo» en el Tablero, como en la app HH:
