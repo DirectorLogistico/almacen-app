@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.4 · fase 2';
+const VERSION='3.5 · fase 2';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4213,8 +4213,8 @@ ACT.impApply=async()=>{if(!IMP||!IMP.data||!IMP.data.ok)return;const f=IMPF[IMP.
  catch(e){console.error(e);toast('No se pudo cargar: '+sbErr(e),'er');if(b){b.disabled=false;b.textContent='Cargar'}}};
 /* Botón «Cargar maestro de Siesa» junto a «Cargar inventario» en Materiales */
 function sbBotonMaestro(){const b=$('[data-act="imp"][data-v="mat"]');if(!b||$('[data-act="imp"][data-v="maestro"]'))return;
- b.innerHTML=icon('upload',16)+'Cargar existencias (Siesa)';
- const n=document.createElement('button');n.className=b.className;n.dataset.act='imp';n.dataset.v='maestro';n.innerHTML=icon('upload',16)+'Cargar maestro de Siesa';b.parentNode.insertBefore(n,b)}
+ b.innerHTML=icon('up',16)+'Cargar existencias (Siesa)';
+ const n=document.createElement('button');n.className=b.className;n.dataset.act='imp';n.dataset.v='maestro';n.innerHTML=icon('up',16)+'Cargar maestro de Siesa';b.parentNode.insertBefore(n,b)}
 new MutationObserver(()=>{if(U.user)sbBotonMaestro()}).observe(document.body,{childList:true,subtree:true});
 
 /* ---------- Copia de seguridad (.sql) · solo Gerencia ---------- */
@@ -4227,18 +4227,86 @@ function copiaCard(){if(!U.user||U.user.rol!=='Gerencia')return'';const u=ultima
 const sqlTxt=v=>String(v).replace(/'/g,"''");
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
    if(k==='alm_usuarios')rows.forEach(r=>r.id=null);
-   const ov=['alm_movimientos','alm_importaciones'].includes(k)?' overriding system value':'';
+   const ov=['alm_movimientos','alm_importaciones','alm_bom'].includes(k)?' overriding system value':'';
    t+=`insert into public.${k}${ov} select * from jsonb_populate_recordset(null::public.${k}, '${sqlTxt(JSON.stringify(rows))}'::jsonb) on conflict do nothing;\n`});
-  t+=`\nselect setval(pg_get_serial_sequence('public.alm_movimientos','id'), greatest(1,(select coalesce(max(id),1) from public.alm_movimientos)));\nselect setval(pg_get_serial_sequence('public.alm_importaciones','id'), greatest(1,(select coalesce(max(id),1) from public.alm_importaciones)));\n`;
+  t+=`\nselect setval(pg_get_serial_sequence('public.alm_movimientos','id'), greatest(1,(select coalesce(max(id),1) from public.alm_movimientos)));\nselect setval(pg_get_serial_sequence('public.alm_importaciones','id'), greatest(1,(select coalesce(max(id),1) from public.alm_importaciones)));\nselect setval(pg_get_serial_sequence('public.alm_bom','id'), greatest(1,(select coalesce(max(id),1) from public.alm_bom)));\n`;
   t+=`update public.alm_usuarios u set id = a.id from auth.users a where lower(a.email) = u.email and u.id is null;\ncommit;\n`;
   if(await saveFile('Copia_Latamks_Almacen_'+fstamp()+'.sql',new Blob([t],{type:'application/sql'}))){try{localStorage.setItem(CKEY,HOY)}catch(e){}rerender()}}
  catch(e){console.error(e);toast('No se pudo generar la copia: '+sbErr(e),'er')}
  finally{if(el)el.disabled=false}};
 {const _aj2=VIEWS.ajus;VIEWS.ajus=function(){return copiaCard()+_aj2()}}
+
+/* ================= Proyectos y BOM en Supabase (v3.5) =================
+   - Lee proyectos, BOM y equivalencias desde la base de datos.
+   - Lee el BOM en el formato de Diseño: «N° · CODIGO · DESCRIPCION · CANT» con filas de sección.
+   - Las equivalencias dudosas (código distinto o sin código) se confirman una vez y quedan guardadas.
+   - Las piezas CL (corte láser) se crean como piezas de corte sin costo Siesa, en MP001. */
+let EQDB={};
+const nDesc=s=>String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [pr,bo,eq,ex]=await Promise.all([
+  leerTodo('alm_proyectos','id,op,cliente,descripcion,modelo,estado,inicio,entrega,vin,po,oc_fecha,oc_valor,ot_estado','id'),
+  leerTodo('alm_bom','id,proyecto,orden,seccion,cod,cod_bom,descripcion,cantidad,nota','id'),
+  leerTodo('alm_equivalencias','clave,cod','clave'),
+  leerTodo('alm_materiales','cod,origen,es_pieza_corte','cod')]);
+ ex.forEach(x=>{const m=MI[x.cod];if(!m)return;m.src=x.origen||'Siesa';if(x.es_pieza_corte){m.cl=true;if(!(m.stk.AL001>0)){delete m.stk.AL001;delete m.ub.AL001}if(m.stk.MP001==null){m.stk.MP001=0;m.ub.MP001=m.ub.MP001||''}}});
+ EQDB={};eq.forEach(e=>EQDB[e.clave]=e.cod);
+ const B={};bo.forEach(l=>{(B[l.proyecto]=B[l.proyecto]||[]).push({sec:l.seccion,cod:l.cod,desc:l.descripcion||(MI[l.cod]||{}).desc||l.cod,q:+l.cantidad,nota:l.nota||undefined,codBom:l.cod_bom||undefined})});
+ S.proys=pr.map(p=>({id:p.id,op:p.op,cliente:p.cliente,desc:p.descripcion,modelo:p.modelo,estado:p.estado,creado:p.inicio,entrega:p.entrega||'',vin:p.vin,po:p.po,ocCli:{f:p.oc_fecha||'',valor:+p.oc_valor||0},ot:{estado:p.ot_estado||'Borrador',f:p.inicio},fotos:0,mb:0,bom:(B[p.id]||[]).map(l=>{if(!l.nota)delete l.nota;if(!l.codBom)delete l.codBom;return l}),bomLog:[]})).sort((a,b)=>b.id.localeCompare(a.id));
+}}
+
+/* ---------- Lector del BOM de Diseño ---------- */
+{const _pb=parseBOM;parseBOM=function(rows){
+ const nrm=x=>String(x==null?'':x).trim();
+ const hi=rows.findIndex(r=>{const h=r.map(c=>nrm(c).toUpperCase());return h.some(c=>c==='CODIGO'||c==='CÓDIGO')&&h.some(c=>/^CANT/.test(c))&&!h.some(c=>/SECCI/.test(c))});
+ if(hi<0)return _pb(rows);
+ const out=[];let sec='GENERAL',n=0;
+ rows.forEach((r,i)=>{const c=r.map(nrm);const fill=c.filter(Boolean);if(!fill.length)return;
+  const H=c.map(x=>x.toUpperCase());if(H.some(x=>x==='CODIGO'||x==='CÓDIGO')&&H.some(x=>/^CANT/.test(x)))return;
+  if(c[0]&&fill.length===1&&isNaN(+c[0])){if(!/^BOM\b/i.test(c[0]))sec=c[0].toUpperCase();return}
+  const q=parseFloat(String(c[3]).replace(',','.'));if(isNaN(q)||q<=0)return;
+  n++;const code=(c[1]==='-'?'':c[1]);const desc=c[2];
+  const l={sec,cod:code,desc,q,_n:n};
+  if(!code){l.sinCod=true;const e=EQDB['DESC:'+nDesc(desc)];if(e&&MI[e]){l.cod=e;l.codBom='(sin código)'}else l.cod='SIN CÓDIGO #'+n}
+  else if(EQDB[code]&&MI[EQDB[code]]&&!MI[code]){l.codBom=code;l.cod=EQDB[code]}
+  out.push(l)});
+ return out}}
+
+/* Candidatos de Siesa para una línea que no se emparejó sola */
+function bomCands(l){const base=l.sinCod?'':(l.codBom||l.cod);const T=new Set(nDesc(l.desc).split(' ').filter(w=>w.length>2&&!/^\d+$/.test(w)));
+ const out=[];S.mats.forEach(m=>{if(m.cl||esPH(m))return;let s=0;if(base&&nCod(m.cod).startsWith(nCod(base)))s+=10;const W=nDesc(m.desc).split(' ');W.forEach(w=>{if(T.has(w))s+=2});if(s>=4)out.push({m,s})});
+ return out.sort((a,b)=>b.s-a.s).slice(0,5)}
+const bomPend=b=>b.filter(l=>l.sinCod&&/^SIN CÓDIGO/.test(l.cod)||(!l.sinCod&&!MI[l.cod]&&!/^CL/i.test(l.cod)));
+
+/* Vista previa: agrega la confirmación de equivalencias */
+{const _pv=prevBOM;prevBOM=function(){_pv();const b=NP.bom;if(!b.length)return;const P_=bomPend(b);const box=$('#npPrev');if(!box)return;
+ const cl=b.filter(l=>/^CL/i.test(l.cod)&&!MI[l.cod]).length;
+ let h='';if(cl)h+=`<div class="note" style="margin-top:10px">${icon('layers',16)}<span><b>${cl} piezas de corte láser (CL)</b> no existen en Siesa: se crean como piezas de corte en MP001, sin costo, a la espera del conteo físico.</span></div>`;
+ if(P_.length)h+=`<div class="card flat" style="margin-top:10px;border-color:var(--wa)"><h3 style="margin:0 0 4px">Confirma ${P_.length} equivalencias</h3><p class="mut" style="margin:0 0 10px;font-size:13px">Estas líneas no tienen el mismo código que Siesa. Elige el material de Siesa que corresponde. Se guarda una sola vez: los próximos BOM se emparejan solos.</p>
+  ${tbl(['BOM','Descripción en el BOM','Material de Siesa'],P_.map(l=>{const C=bomCands(l);const i=b.indexOf(l);return[l.sinCod?'<span class="bd wa">sin código</span>':esc(l.cod),esc(l.desc),`<select class="sel" data-eqi="${i}" style="min-width:260px">${C.map((c,k)=>`<option value="${esc(c.m.cod)}" ${k===0?'selected':''}>${esc(c.m.cod)} · ${esc(c.m.desc.slice(0,48))}</option>`).join('')}<option value="" ${C.length?'':'selected'}>— Crear como material nuevo, sin costo —</option></select>`]}))}</div>`;
+ box.insertAdjacentHTML('beforeend',h)}}
+
+/* ---------- Guardar el proyecto en Supabase ---------- */
+ACT.saveP=async(v,el)=>{
+ const id=$('#npId').value.trim();if(!/^\d{5}$/.test(id)){toast('El número debe tener 5 dígitos, por ejemplo 00038.','er');return}
+ if(P(id)){toast('Ya existe el proyecto '+id+'.','er');return}
+ const desc=$('#npDesc').value.trim();if(!desc){toast('Escribe la descripción del proyecto.','er');return}
+ const bom=(NP&&NP.bom)||[];const eqv=[];
+ $$('[data-eqi]').forEach(s=>{const l=bom[+s.dataset.eqi];if(!l)return;const orig=l.sinCod?'':l.cod;
+  if(s.value){l.codBom=l.sinCod?'(sin código)':orig;l.cod=s.value;eqv.push({clave:l.sinCod?'DESC:'+nDesc(l.desc):orig,cod:s.value})}
+  else if(l.sinCod){l.cod='SC'+id+'-'+String(l._n).padStart(2,'0')}});
+ mapBOM(bom);
+ const lineas=bom.map(l=>({sec:l.sec,cod:l.cod,codBom:l.codBom||'',desc:l.desc,q:l.q,nota:l.nota||''}));
+ const p={id,cliente:$('#npCli').value.trim(),desc,modelo:$('#npMod').value,inicio:$('#npEnt').value||HOY,entrega:$('#npEntr').value||'',vin:($('#npVin')||{value:''}).value.trim(),po:$('#npPo').value.trim(),oc_fecha:$('#npOcF').value||'',oc_valor:+$('#npOcV').value||0};
+ if(el){el.disabled=true;el.textContent='Guardando…'}
+ try{const {data,error}=await SB.rpc('alm_crear_proyecto',{p_proy:p,p_lineas:lineas,p_equiv:eqv,p_archivo:(NP&&NP.src)||''});if(error)throw error;
+  await cargarDatos();closeModal();U.view='proy';U.pj=id;U.tab.pj='bom';rerender();
+  toast('Proyecto '+id+' guardado con '+data.lineas+' líneas de BOM'+(data.materiales_nuevos?' · '+data.materiales_nuevos+' piezas o materiales nuevos':'')+(eqv.length?' · '+eqv.length+' equivalencias guardadas':'')+'.','ok')}
+ catch(e){console.error(e);toast('No se pudo guardar el proyecto: '+sbErr(e),'er');if(el){el.disabled=false;el.textContent='Crear proyecto'}}};
 
 /* ================= Informe ejecutivo (v3.4) =================
    Botón «Informe ejecutivo» en el Tablero, como en la app HH:
