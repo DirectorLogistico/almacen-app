@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.0 · bloque 1';
+const VERSION='4.1 · bloque 2';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y correcciones del BOM. Todavía no se guardan (bloques 2 a 6 del plan): órdenes de compra, entradas, calidad, corte, kits, EPP, conteos y liberaciones.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y correcciones del BOM. Todavía no se guardan (bloques 3 a 6 del plan): corte, chatarra, kits, EPP, conteos y liberaciones.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4659,7 +4659,7 @@ function fotoReducir(file){return new Promise((res,rej)=>{const rd=new FileReade
     if(blob&&blob.size<=165*1024)break;if(cal>.5)cal-=.1;else lado=Math.round(lado*.8)}
    blob?res(blob):rej(new Error('No se pudo reducir la foto'))};im.src=rd.result};rd.readAsDataURL(file)})}
 async function fotosSubir(ref,files){const L=[...(files||[])].slice(0,6);let ok=0;const err=[];
- for(let i=0;i<L.length;i++){try{const b=await fotoReducir(L[i]);const ruta=`fdp/${ref}/${Date.now()}_${i+1}.jpg`;
+ for(let i=0;i<L.length;i++){try{const b=await fotoReducir(L[i]);const ruta=`${/^EA-/.test(ref)?'ea':'fdp'}/${ref}/${Date.now()}_${i+1}.jpg`;
   const up=await SB.storage.from('alm-fotos').upload(ruta,b,{contentType:'image/jpeg',upsert:false});if(up.error)throw up.error;
   const {error}=await SB.rpc('alm_foto_registrar',{p_ref:ref,p_ruta:ruta,p_kb:Math.round(b.size/1024)});if(error)throw error;ok++}
   catch(e){console.error(e);err.push(sbErr(e))}}
@@ -4929,6 +4929,95 @@ function marcarOff(){offPend=false;if(!U.user||U.kiosk)return;
  $$('[data-act]').forEach(el=>{const p=permDe(el);if(p&&!canReal(p)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Lo hace: '+quienPuede(p))}});
  [['mm','mm.edit'],['rq','rep.edit']].forEach(([k,p])=>{if(!canReal(p))$$('[data-'+k+']').forEach(x=>{if(!x.disabled){x.disabled=true;x.title='Lo hace: '+quienPuede(p)}})})}
 new MutationObserver(()=>{if(!offPend){offPend=true;requestAnimationFrame(marcarOff)}}).observe(document.body,{childList:true,subtree:true});
+
+/* ================= Bloque 2 · Compras y entradas (v4.1) =================
+   La interfaz es la de la maqueta (app5.js: OC y EA; app3.js: Calidad; app10.js: proyección).
+   - OC: Compras o Gerencia. Se anulan solo sin recibos.
+   - Entrada (EA): Auxiliar o Gerencia, contra la OC, todo a AL001, con fotos opcionales.
+     Se registra también en Siesa con la misma factura.
+   - Láminas con MTR: entran en cuarentena. Calidad libera (con colada) o rechaza; lo rechazado
+     sigue en cuarentena hasta que almacén lo devuelve al proveedor. */
+
+/* ---------- Leer OC, entradas, calidad y cuarentena ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [oc,ea,ca,ex,ma]=await Promise.all([
+  leerTodo('alm_ordenes_compra','id,fecha,eta,proveedor,ref,estado,observacion,elaboro,lineas,anulada_motivo','id'),
+  leerTodo('alm_entradas','id,fecha,oc,proveedor,remision,ftipo,fnum,recibe,estado,lineas,anulada_motivo','id'),
+  leerTodo('alm_calidad','id,fecha,tipo,referencia,cod,cantidad,colada,estado,observacion,reviso','id'),
+  leerTodo('alm_existencias','cod,bodega,cuarentena','cod'),
+  leerTodo('alm_materiales','cod,familia,descripcion,exige_mtr,es_pieza_corte','cod')]);
+ S.ocs=oc.map(o=>({id:o.id,f:o.fecha,eta:o.eta||'',prov:o.proveedor,ref:o.ref||'',estado:o.estado,obs:o.observacion+(o.estado==='Anulada'&&o.anulada_motivo?' · Anulada: '+o.anulada_motivo:''),u:o.elaboro,ej:false,
+  lineas:(o.lineas||[]).map(l=>({cod:l.cod,ped:+l.ped,rec:+l.rec||0,pu:+l.pu||0}))})).sort((a,b)=>b.id.localeCompare(a.id));
+ S.ea=ea.map(e=>({id:e.id,f:e.fecha,oc:e.oc,prov:e.proveedor,rem:e.remision,ftipo:e.ftipo,fnum:e.fnum,recibe:e.recibe,estado:e.estado,fotos:((typeof FOTOS!=='undefined'&&FOTOS[e.id])||[]).length,ej:false,
+  lineas:(e.lineas||[]).map(l=>({cod:l.cod,sol:+l.sol,rec:+l.rec}))})).sort((a,b)=>b.id.localeCompare(a.id));
+ S.cal=ca.map(c=>({id:c.id,f:c.fecha,tipo:c.tipo,ref:c.referencia,cod:c.cod,q:+c.cantidad,colada:c.colada,estado:c.estado,obs:c.observacion,ej:false})).sort((a,b)=>b.id.localeCompare(a.id));
+ S.mats.forEach(m=>{delete m.cuar});ex.forEach(x=>{const m=MI[x.cod];if(m&&+x.cuarentena>0)m.cuar=(m.cuar||0)+(+x.cuarentena)});
+ ma.forEach(x=>{const m=MI[x.cod];if(!m)return;const r=x.exige_mtr==null?(x.familia==='Materia prima'&&/LAMINA/i.test(x.descripcion)&&!x.es_pieza_corte):x.exige_mtr;if(r)m.mtr=true;else delete m.mtr});
+}}
+
+/* ---------- Órdenes de compra ---------- */
+{const _no=newOC;newOC=function(pre){_no(pre);const f=$('#ocObs');if(f&&!$('#ocRef'))f.closest('.fld').insertAdjacentHTML('afterend',`<div class="fld" style="margin-top:12px"><label for="ocRef">Número de la OC en Siesa (opcional)</label><input class="inp" id="ocRef" placeholder="Ej.: OC-0500"></div>`)}}
+ACT.newOC=()=>newOC();
+ACT.saveOC=async(v,el)=>{const prov=$('#ocProv').value.trim();if(!prov){toast('Escribe el proveedor.','er');return}
+ const L=OCD.lineas.filter(l=>l.cod&&l.ped>0);if(!L.length){toast('Agrega al menos una línea con código y cantidad.','er');return}const bad=L.find(l=>!MI[l.cod]);if(bad){toast('El código '+esc(bad.cod)+' no existe. Créalo primero en Materiales.','er');return}
+ await sbAccion(el,'Creando…',async()=>{const {data,error}=await SB.rpc('alm_oc_crear',{p:{prov,fecha:$('#ocF').value,obs:$('#ocObs').value.trim(),ref:($('#ocRef')||{value:''}).value.trim(),lineas:L.map(l=>({cod:l.cod,ped:+l.ped,pu:+l.pu||0}))}});if(error)throw error;
+  await cargarDatos();closeModal();U.view='oc';rerender();toast(data.id+' creada por '+money(L.reduce((a,l)=>a+l.ped*(l.pu||0),0))+'.','ok')})};
+ACT.ocSugGo=async(v,el)=>{const prov=$('#sgProv').value.trim();if(!prov){toast('Escriba el proveedor.','er');return}const L=proyeccion().filter(r=>r.falta>0&&!r.corte);
+ await sbAccion(el,'Creando…',async()=>{const {data,error}=await SB.rpc('alm_oc_crear',{p:{prov,eta:$('#sgEta').value,obs:'OC sugerida por la proyección de compras ('+[...new Set(L.flatMap(r=>Object.keys(r.proys)))].join(', ')+')',lineas:L.map(r=>({cod:r.cod,ped:Math.ceil(r.falta*100)/100,pu:Math.round(r.m.costo||0)}))}});if(error)throw error;
+  await cargarDatos();closeModal();U.view='oc';rerender();toast(data.id+' creada desde la proyección.','ok')})};
+ACT.ocAnular=v=>{modal(mh('Anular '+esc(v),'La OC no ha recibido nada. Queda anulada con el motivo.')+`<div class="fld"><label for="ocAn">Motivo</label><input class="inp" id="ocAn" placeholder="Ej.: el proveedor no tiene el material"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="ocAnularGo" data-v="${esc(v)}">Anular OC</button></div>`,'s')};
+ACT.ocAnularGo=async(v,el)=>{const mo=($('#ocAn').value||'').trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_oc_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' anulada.','ok')})};
+IMPF.oc.applyDb=async function(d){const {data,error}=await SB.rpc('alm_oc_importar',{p:d.L.map(g=>({num:g.num,prov:g.prov,fecha:g.f||'',lineas:g.lineas.map(l=>({cod:l.cod,ped:l.ped,pu:l.pu||0}))}))});if(error)throw error;return(data.ids||[]).length+' orden(es) de compra cargadas: '+(data.ids||[]).join(', ')+'.'};
+{const _pv=IMPF.oc.prev;IMPF.oc.prev=function(d){let h=_pv(d);if(d&&d.ok){const bad=[...new Set(d.L.flatMap(g=>g.lineas.map(l=>l.cod)).filter(c=>!MI[c]))];
+ if(bad.length)h=errBox(bad.length+' código(s) no existen en Materiales. Créalos primero o corrige el Excel:',bad)+h;
+ const sinProv=d.L.filter(g=>!g.prov).map(g=>g.num);if(sinProv.length)h=errBox('Hay OC sin proveedor:',sinProv)+h}return h}}
+
+/* ---------- Entradas de almacén ---------- */
+ACT.saveEA=async(v,el)=>{const o=S.ocs.find(x=>x.id===$('#rOc').value);if(!o)return;
+ if(!$('#rRem').value.trim()){toast('Escribe la remisión o factura.','er');return}if(!$('#rFn').value.trim()){toast('Escribe el número del formulario '+$('#rFt').value+'.','er');return}
+ const lineas=o.lineas.map((l,i)=>({i,q:parseFloat(($('#rq'+i)||{value:0}).value)||0})).filter(x=>x.q>0);if(!lineas.length){toast('No hay cantidades para recibir.','er');return}
+ const files=$('#rFotos')?$('#rFotos').files:[];let res=null,fo=null;
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_ea_registrar',{p:{oc:o.id,rem:$('#rRem').value.trim(),ftipo:$('#rFt').value,fnum:$('#rFn').value.trim(),lineas}});if(error)throw error;res=data;
+  if(files&&files.length){el&&(el.textContent='Subiendo fotos…');fo=await fotosSubir(data.id,files)}
+  await cargarDatos();closeModal();rerender()});
+ if(res){toast(`${res.id} registrada. ${res.oc} queda ${String(res.estado_oc).toLowerCase()}.${res.laminas?' Las láminas quedan en cuarentena hasta que Calidad revise el MTR.':''} Recuerda registrarla también en Siesa con la misma factura.`,'ok');
+  if(fo&&fo.err.length)toast(fo.err.length+' foto(s) no subieron: '+esc(fo.err[0]),'wa')}};
+ACT.eaEdSave=async(v,el)=>{const e=S.ea.find(x=>x.id===v);if(!e)return;
+ if(e.lineas.some((l,i)=>Math.abs((parseFloat(($('#xq'+i)||{value:l.rec}).value)||0)-l.rec)>1e-9)){toast('Las cantidades no se cambian aquí: si la entrada quedó mal, Gerencia la anula y se registra de nuevo.','wa');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_ea_editar',{p_id:v,p_rem:$('#xRem').value.trim(),p_ftipo:$('#xFt').value,p_fnum:$('#xFn').value.trim()});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' actualizada.','ok')})};
+ACT.eaDel=v=>{const e=S.ea.find(x=>x.id===v);if(!e)return;if(e.estado==='Anulada'){toast(v+' ya está anulada.','wa');return}
+ modal(mh('Anular '+esc(v),e.oc+' · '+esc(e.prov))+`<p class="mut" style="line-height:1.55">Se reversa en el inventario lo que entró con esta EA (${e.lineas.map(l=>qf(l.rec)+' '+esc(l.cod)).join(', ')}) y la ${esc(e.oc)} vuelve a quedar pendiente. La EA queda <b>Anulada</b> para la trazabilidad de zona franca. Si ya se entregó parte, no deja anular. Anúlala también en Siesa.</p><div class="fld" style="margin-top:10px"><label for="eaAn">Motivo</label><input class="inp" id="eaAn" placeholder="Ej.: se registró en la OC equivocada"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="eaAnularGo" data-v="${esc(v)}">Anular entrada</button></div>`,'s')};
+ACT.eaDelGo=v=>ACT.eaDel(v);
+ACT.eaAnularGo=async(v,el)=>{const mo=($('#eaAn').value||'').trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_ea_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' anulada; inventario y OC reversados.','ok')})};
+
+/* ---------- Calidad del material ---------- */
+const calResolver=async(v,ok,el)=>{const c=S.cal.find(x=>x.id===v);if(!c)return;const col=($('#qCol')||{value:''}).value.trim();
+ if(ok&&c.tipo==='Revisión de MTR'&&(!col||!($('#qMtr')&&$('#qMtr').checked))){toast('Para liberar escribe la colada y confirma que revisaste el MTR.','er');return}
+ await sbAccion(el,ok?'Liberando…':'Rechazando…',async()=>{const {error}=await SB.rpc('alm_cal_resolver',{p_id:v,p_ok:ok,p_colada:col,p_obs:''});if(error)throw error;await cargarDatos();closeModal();rerender();
+  toast(ok?v+' liberado: el material ya se puede entregar.':v+' rechazado: sigue en cuarentena hasta devolverlo al proveedor.',ok?'ok':'wa')})};
+ACT.calOkGo=(v,el)=>calResolver(v,true,el);
+ACT.calNo=(v,el)=>calResolver(v,false,el);
+ACT.saveVal=async(v,el)=>{const c=$('#vCod').value.trim();if(!MI[c]){toast('Ese código no existe en materiales.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_cal_validar',{p:{cod:c,q:+$('#vQ').value||1,res:$('#vRes').value,obs:$('#vObs').value.trim()}});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Validación guardada.','ok')})};
+/* Lo rechazado se devuelve al proveedor desde la pantalla de Calidad (Auxiliar o Gerencia) */
+{const _vc=VIEWS.cal;VIEWS.cal=function(){const h=_vc.apply(this,arguments);const R=S.cal.filter(c=>c.estado==='Rechazado'&&c.tipo==='Revisión de MTR');if(!R.length)return h;
+ return h+`<div class="card"><div class="ch"><div><h3>Rechazado por Calidad · en cuarentena</h3><p>No se entrega. Cuando salga hacia el proveedor, almacén registra la devolución: sale del inventario y la OC vuelve a quedar pendiente.</p></div></div>${tbl(['Registro','Material','Cantidad','Entrada','Observación',''],R.map(c=>{const m=M(c.cod);return[`<b>${c.id}</b><div class="sub">${fd(c.f)}</div>`,`${cc(c.cod)}<div class="sub">${esc(m.desc)}</div>`,qf(c.q,m.um)+' '+m.um,esc(c.ref),`<span class="sub">${esc(c.obs)}</span>`,`<button class="btn sm" data-act="calDev" data-v="${c.id}">${icon('redo',14)}Devolver al proveedor</button>`]}),[2])}</div>`}}
+ACT.calDev=v=>{const c=S.cal.find(x=>x.id===v);modal(mh('Devolver al proveedor · '+esc(v),`${esc(c.cod)} · ${qf(c.q)} ${M(c.cod).um} · ${esc(c.ref)}`)+`<p class="mut" style="line-height:1.55">Sale del inventario (AL001) y queda en el kárdex como «devolución a proveedor». La OC vuelve a quedar pendiente por esa cantidad.</p><div class="fld" style="margin-top:10px"><label for="cdObs">Guía o soporte de la devolución</label><input class="inp" id="cdObs" placeholder="Ej.: guía 123 del 12 nov"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="calDevGo" data-v="${esc(v)}">Registrar devolución</button></div>`,'s')};
+ACT.calDevGo=async(v,el)=>{await sbAccion(el,'Registrando…',async()=>{const {error}=await SB.rpc('alm_cal_devolver',{p_id:v,p_obs:($('#cdObs').value||'').trim()});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' devuelto al proveedor.','ok')})};
+/* Registros de calidad, OC y EA no se borran desde la papelera */
+{const _da=ACT.delAsk;ACT.delAsk=(v,el)=>{const t=v.slice(0,v.indexOf('|')),id=v.slice(v.indexOf('|')+1);
+ if(t==='cal'){toast('Los registros de Calidad no se borran: son la trazabilidad del material.','wa');return}
+ if(t==='ea'){ACT.eaDel(id);return}
+ if(t==='oc'){const o=S.ocs.find(x=>x.id===id);if(o&&o.estado==='Abierta'&&o.lineas.every(l=>!l.rec))ACT.ocAnular(id);else toast('Una OC que ya recibió material no se anula.','wa');return}
+ return _da(v,el)}}
+
+/* ---------- Permisos visibles (decisión 34) para los botones nuevos ---------- */
+Object.assign(ACT_PERM,{calOkGo:'cal.lib',calDev:'ea.new',ocAnular:'oc.new',saveOC:'oc.new',saveEA:'ea.new'});
+
+/* ---------- Aviso al recargar existencias de Siesa ---------- */
+{const _pm=IMPF.mat.prev;IMPF.mat.prev=function(d){return`<div class="note wa" style="margin-bottom:10px">${icon('warn',16)}<span><b>Las entradas ya se registran en la app.</b> Esta carga deja el inventario de la app igual al de Siesa. Úsala solo cuando Siesa y la app tengan registradas las mismas entradas (por ejemplo, al cierre del mes). Si Siesa tiene una entrada que todavía no está en la app, o al revés, se descuadra.</span></div>`+_pm(d)}}
 
 </script>
 </body>
