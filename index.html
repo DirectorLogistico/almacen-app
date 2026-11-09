@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.7 · fase 3';
+const VERSION='3.8 · fase 4';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -3970,7 +3970,7 @@ VIEWS.ajw=function(){const f=U.f;const d=f.ajD||addD(HOY,-90),h=f.ajH||HOY;const
    En la fase 1 la app es de solo lectura: nada se guarda en el navegador ni en la base. */
 const SB_URL='https://atcmxuzlxvzijifcggzt.supabase.co';
 const SB_KEY='sb_publishable_mUcOwdElBtS7WgByHBiYAA_Bw3XsBuj';
-const SB_FASE='Fase 3';
+const SB_FASE='Fase 4';
 const INACT_MS=12*3600*1000,AKEY='latamks_alm_ultima_actividad';
 const ROLES_TODOS=['Gerencia','Auxiliar','Inventario','Auditoría','Producción','Calidad','Diseño','Compras'];
 
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Solicitudes y entregas activas.</b> Inventario de Siesa en AL001, proyectos, BOM, liberación de la OT, solicitudes y entregas se guardan en la base de datos. Las demás operaciones (devoluciones, entradas, conteos…) todavía no se guardan: se activan fase por fase.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Devoluciones y daño o pérdida activos.</b> Inventario de Siesa en AL001, proyectos, BOM, liberación de la OT, solicitudes, entregas, devoluciones y daños o pérdidas se guardan en la base de datos. Las demás operaciones (entradas, conteos, excedentes…) todavía no se guardan: se activan fase por fase.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4403,6 +4403,9 @@ async function kqCargar(cod,ini){
  const B={};(data.bom||[]).forEach(l=>{(B[l.proy]=B[l.proy]||[]).push({sec:l.sec,cod:l.cod,desc:l.desc,q:+l.q})});
  S.proys=(data.proyectos||[]).map(p=>({id:p.id,op:p.op,desc:p.desc,modelo:p.modelo,estado:'Activo',cliente:'',creado:HOY,entrega:'',ot:{estado:'Liberada'},bom:B[p.id]||[],fotos:0,mb:0}));
  let n=0;S.movs=(data.usado||[]).map(u=>({id:++n,f:HOY,t:'Salida',cod:u.cod,desc:'',um:'',q:+u.q,bod:'AL001',proy:u.proy,op:'',doc:'',u:'',ej:false,cu:0}));
+ /* v3.8: lo que el líder tiene en planta, para devolver o reportar daño */
+ (data.entregado||[]).forEach(e=>{if(!S.mats.some(m=>m.cod===e.cod))S.mats.push({cod:e.cod,item:'',desc:e.desc,um:e.um,fam:e.fam,costo:0,stk:{AL001:0},ub:{},src:'Siesa'})});
+ KQ.ent=(data.entregado||[]).map((e,i)=>({id:i+1,f:HOY,t:'Salida',cod:e.cod,desc:e.desc,um:e.um,q:+e.q,bod:'AL001',proy:e.proy,op:'',doc:'',u:'',ej:false,cu:0}));
  S.tecs=[Object.assign({activo:true,tallas:{}},data.tec)];idx();
  return S.tecs[0]}
 
@@ -4427,8 +4430,8 @@ async function kqCargar(cod,ini){
  Object.assign(K,{step:1,tec:null,proy:null,mode:null,sel:{},sec:null,q:''});KQ.tec=null;S=load();idx();renderKiosk()}}
 {const _kn=ACT.kNew;ACT.kNew=(v,el)=>{_kn(v,el);if(KQ.on&&K.tec&&!K.tec.lider){K.mode='pedir';K.step=3;renderKiosk()}}}
 
-/* Devolver y daños todavía no se guardan: no se ofrecen en el QR hasta su fase */
-{const _rk=renderKiosk;renderKiosk=function(){_rk();if(K.step===2){$$('[data-act="kMode"][data-v="dev"],[data-act="kMode"][data-v="fdp"]').forEach(b=>b.remove());const o=$('.kopts');if(o&&!$('#kPronto'))o.insertAdjacentHTML('afterend','<p class="mut3" id="kPronto" style="font-size:12.5px;margin-top:10px">Devolver material y reportar daño o pérdida se activan en la próxima fase.</p>')}
+/* v3.8: Devolver y Reportar daño ya se guardan (decisión 68 cumplida): se muestran en el QR */
+{const _rk=renderKiosk;renderKiosk=function(){_rk();
  if(KQ.on){const s=$('.kh small');if(s)s.textContent='Taller Latamks · QR de solicitud'+(K.tec?' · '+K.tec.nombre:'');const b=$('.kh [data-act="kioskOut"]');if(b)b.textContent=U.user?'Volver a la app':(K.tec?'Salir':'')}}}
 
 /* ---------- Ajustes: el QR con su código (solo Gerencia) ---------- */
@@ -4584,6 +4587,155 @@ async function infXLS(I){if(!window.XLSX){toast('La librería de Excel no cargó
 function infBoton(){const t=$('header.top');if(!t)return;const b=$('#infBtn');if(U.view!=='dash'){if(b)b.remove();return}if(b)return;
  const n=document.createElement('button');n.id='infBtn';n.className='infbtn';n.dataset.act='informe';n.innerHTML=icon('down',16)+'<span>Informe ejecutivo</span>';const sp=t.querySelector('.sp');if(sp)sp.after(n);else t.appendChild(n)}
 new MutationObserver(()=>{if(U.user)infBoton()}).observe(document.body,{childList:true,subtree:true});
+
+/* ================= Fase 4 (parte A) · Devoluciones y Daño o pérdida (v3.8) =================
+   La interfaz es la de la maqueta (app5.js); aquí solo cambia la capa de datos.
+   - Devolución: Producción (o Luis por el QR) la pide; el Auxiliar o Gerencia la reciben.
+     Con el material en la mano, el Auxiliar o Gerencia la registran y reciben en un paso.
+     Solo se devuelve lo que la app entregó al proyecto. CL vuelve a MP001; lo demás a AL001.
+   - Daño o pérdida (FDP): Producción, Calidad, Gerencia o Luis por el QR. Gerencia aprueba.
+     La pieza dañada sigue cargada al tanque; aprobado suma al tope del BOM.
+   - Fotos opcionales del daño (máximo 6), reducidas a ~150 KB, en el archivador privado alm-fotos. */
+
+/* ---------- Permisos (decisiones 31, 32 y documento 04) ---------- */
+if(!PERM['Auxiliar'].includes('dev.pedir'))PERM['Auxiliar'].push('dev.pedir');   /* registra lo que ya recibió en la mano */
+if(!PERM['Calidad'].includes('fdp.new'))PERM['Calidad'].push('fdp.new');         /* documento 04, 2.2 */
+const ROL_FOTO=['Gerencia','Auxiliar','Producción','Calidad'];
+const esAlm=()=>!!U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
+
+/* ---------- Leer devoluciones, daños y fotos ---------- */
+let FOTOS={};
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [dv,dn,ft]=await Promise.all([
+  leerTodo('alm_devoluciones','id,fecha,proyecto,seccion,cod,cantidad,motivo,pide,pide_cod,canal,estado,bodega,recibe,recibida_en,anulada_motivo','id'),
+  leerTodo('alm_danos','id,fecha,proyecto,seccion,cod,cantidad,tipo,area,causa,descripcion,accion,reporta,canal,costo,estado,aprobo,aprobado_en,observacion','id'),
+  leerTodo('alm_fotos','id,referencia,ruta,kb,tomada_por,creado_en,borrada','id')]);
+ FOTOS={};ft.filter(f=>!f.borrada).forEach(f=>(FOTOS[f.referencia]=FOTOS[f.referencia]||[]).push(f));
+ S.devs=dv.map(d=>({id:d.id,f:d.fecha,proy:d.proyecto,sec:d.seccion,cod:d.cod,q:+d.cantidad,motivo:d.estado==='Anulada'?d.motivo+' · anulada: '+d.anulada_motivo:d.motivo,pide:d.pide,estado:d.estado,recibe:d.recibe||'',bod:d.bodega,canal:d.canal,ej:false})).sort((a,b)=>b.id.localeCompare(a.id));
+ S.fdp=dn.map(f=>({id:f.id,f:f.fecha,proy:f.proyecto,sec:f.seccion,cod:f.cod,q:+f.cantidad,tipo:f.tipo,causa:f.causa,desc:f.descripcion,reporta:f.reporta,area:f.area,accion:f.accion,estado:f.estado,aprob:f.estado!=='Pendiente'?{por:f.aprobo,f:(f.aprobado_en||'').slice(0,10),obs:f.observacion}:null,fotos:(FOTOS[f.id]||[]).length,costo:+f.costo||0,canal:f.canal,ej:false})).sort((a,b)=>b.id.localeCompare(a.id));
+}}
+
+/* Lo que hay en planta: entregado por la app − devoluciones por recibir − daños abiertos */
+const enPlanta=(proy,cod)=>Math.max(0,(entregado(proy)[cod]||0)-S.devs.filter(d=>d.proy===proy&&d.cod===cod&&d.estado==='Por recibir').reduce((a,d)=>a+d.q,0)-S.fdp.filter(f=>f.proy===proy&&f.cod===cod&&(f.estado==='Pendiente'||f.estado==='Aprobado')).reduce((a,f)=>a+f.q,0));
+
+/* ---------- Devolver material (desde «Material en planta») ---------- */
+devPedir=function(v){const [proy,cod]=v.split('|');const m=M(cod);const net=enPlanta(proy,cod);const alm=esAlm();
+ if(net<=1e-9){toast('No hay '+esc(cod)+' en planta para devolver: lo que tiene un daño o pérdida abierto o una devolución pendiente no se cuenta.','wa');return}
+ modal(mh('Devolver material',`${proy} · ${esc(cod)} · ${esc(m.desc)}`)+`<div class="two"><div class="fld"><label for="dvQ">Cantidad a devolver (máximo ${qf(net,m.um)} ${m.um})</label><input class="inp" id="dvQ" type="number" min="0" step="any" max="${net}" value="${net}"></div><div class="fld"><label for="dvM">Motivo</label><select class="sel" id="dvM"><option>Sobrante al terminar la sección</option><option>Material equivocado</option><option>Cambio de diseño</option><option>Otro</option></select></div></div>
+ ${alm?`<div class="fld" style="margin-top:12px"><label for="dvP">Quién devuelve el material</label><input class="inp" id="dvP" placeholder="Ej.: Luis Sánchez" value=""></div>
+ <label class="chk" style="margin-top:12px"><input type="checkbox" id="dvYa" checked ${U.user.rol==='Auxiliar'?'disabled':''}><span>Ya lo recibí físicamente en almacén</span></label>
+ <p class="mut3" style="font-size:12.5px;margin-top:6px">${m.cl?'Pieza de corte láser: vuelve a <b>MP001</b>.':'Vuelve a <b>AL001</b> (almacén principal).'} Queda en el kárdex con el costo de Siesa y se descuenta del proyecto.</p>`:'<p class="mut3" style="font-size:12.5px;margin-top:10px">Almacén confirma cuando lo reciba. Hasta entonces sigue cargado al proyecto.</p>'}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="devSave" data-v="${esc(v)}" data-max="${net}">Registrar devolución</button></div>`)};
+ACT.devPedir=v=>devPedir(v);
+ACT.devSave=async(v,el)=>{const [proy,cod]=v.split('|');const q=parseFloat($('#dvQ').value)||0;const max=+el.dataset.max;
+ if(q<=0||q>max+1e-9){toast('La cantidad debe ser mayor que 0 y no superar '+qf(max)+'.','er');return}
+ const ya=!!($('#dvYa')&&$('#dvYa').checked);const pide=(($('#dvP')||{value:''}).value||'').trim();
+ if(esAlm()&&ya&&!pide){toast('Escribe quién devuelve el material.','er');return}
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_dev_pedir',{p:{proy,motivo:$('#dvM').value,lineas:[{cod,q}],ya_recibido:ya,pide}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();const id=(data.ids||[]).join(', ');
+  toast(data.recibida?`${id}: ${qf(q)} ${M(cod).um} vuelven al stock (${data.bodegas[0]}) y se descuentan del proyecto ${proy}.`:`${id} registrada. Almacén la confirma cuando reciba el material.`,'ok')})};
+ACT.devRecibir=async(v,el)=>{await sbAccion(el,'Recibiendo…',async()=>{const d=S.devs.find(x=>x.id===v);const {data,error}=await SB.rpc('alm_dev_recibir',{p_id:v});if(error)throw error;
+ await cargarDatos();rerender();toast(`${v}: ${d?qf(d.q)+' '+M(d.cod).um+' ':''}vuelven al stock (${data.bodega}) y se descuentan del proyecto${d?' '+d.proy:''}.`,'ok')})};
+
+/* Eliminar: una devolución por recibir se anula con motivo; lo demás no se borra */
+{const _da=ACT.delAsk;ACT.delAsk=(v,el)=>{const i=v.indexOf('|');const t=v.slice(0,i),id=v.slice(i+1);
+ if(t==='dev'){const d=S.devs.find(x=>x.id===id);if(!d)return;
+  if(d.estado!=='Por recibir'){toast(d.estado==='Recibida'?'Una devolución recibida ya movió el inventario: no se borra. Si fue un error, avisa a Gerencia para corregir con un ajuste.':'Esta devolución ya está anulada.','wa');return}
+  modal(mh('Anular '+esc(id),'El material nunca llegó al almacén. No mueve inventario y queda el registro.')+`<div class="fld"><label for="dvAn">Motivo de la anulación</label><input class="inp" id="dvAn" placeholder="Ej.: el material no llegó; se sigue usando en planta"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="devAnular" data-v="${esc(id)}">Anular devolución</button></div>`,'s');return}
+ if(t==='fdp'){toast('Los formatos de daño o pérdida no se borran: son la trazabilidad. Gerencia los aprueba o rechaza.','wa');return}
+ return _da(v,el)}}
+ACT.devAnular=async(v,el)=>{const mo=($('#dvAn').value||'').trim();if(mo.length<4){toast('Escribe el motivo de la anulación.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_dev_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' anulada.','ok')})};
+/* Solo Gerencia y el Auxiliar ven el botón para anular devoluciones por recibir */
+{const _dp=VIEWS.planta;VIEWS.planta=function(){const h=_dp.apply(this,arguments);if(U.user&&U.user.rol==='Auxiliar')setTimeout(()=>{$$('[data-act="devRecibir"]').forEach(b=>{const id=b.dataset.v;const td=b.parentNode;if(td&&!td.querySelector('[data-act="delAsk"]'))b.insertAdjacentHTML('afterend',`<button class="ib dl" data-act="delAsk" data-v="dev|${esc(id)}" data-tip="Anular" aria-label="Anular ${esc(id)}">${icon('trash',14)}</button>`)})},0);return h}}
+
+/* ---------- Fotos: se reducen en el navegador a ~150 KB ---------- */
+function fotoReducir(file){return new Promise((res,rej)=>{const rd=new FileReader();rd.onerror=()=>rej(new Error('No se pudo leer la foto'));
+ rd.onload=()=>{const im=new Image();im.onerror=()=>rej(new Error('El archivo no es una imagen'));
+  im.onload=async()=>{let lado=1280,cal=.78,blob=null;
+   for(let i=0;i<8;i++){const k=Math.min(1,lado/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+    c.getContext('2d').drawImage(im,0,0,c.width,c.height);blob=await new Promise(r=>c.toBlob(r,'image/jpeg',cal));
+    if(blob&&blob.size<=165*1024)break;if(cal>.5)cal-=.1;else lado=Math.round(lado*.8)}
+   blob?res(blob):rej(new Error('No se pudo reducir la foto'))};im.src=rd.result};rd.readAsDataURL(file)})}
+async function fotosSubir(ref,files){const L=[...(files||[])].slice(0,6);let ok=0;const err=[];
+ for(let i=0;i<L.length;i++){try{const b=await fotoReducir(L[i]);const ruta=`fdp/${ref}/${Date.now()}_${i+1}.jpg`;
+  const up=await SB.storage.from('alm-fotos').upload(ruta,b,{contentType:'image/jpeg',upsert:false});if(up.error)throw up.error;
+  const {error}=await SB.rpc('alm_foto_registrar',{p_ref:ref,p_ruta:ruta,p_kb:Math.round(b.size/1024)});if(error)throw error;ok++}
+  catch(e){console.error(e);err.push(sbErr(e))}}
+ return{ok,err,omit:Math.max(0,(files||[]).length-6)}}
+
+/* ---------- Formato de daño o pérdida ---------- */
+{const _ff=fdpForm;fdpForm=function(proy,cod){let h=_ff(proy,cod);
+ const sinSesion=typeof KQ!=='undefined'&&KQ.on&&!U.user;
+ h=h.replace('min="1" step="any" value="1"','min="0" step="any" value="1"');
+ if(sinSesion)return h.replace(/<div class="fld" style="margin-top:12px"><label for="fFoto">[\s\S]*?<\/div>$/,`<p class="mut3" style="font-size:12.5px;margin-top:12px">Las fotos del daño se agregan desde la app (Daños y pérdidas › Ver › Agregar fotos).</p>`);
+ return h.replace('>Fotos del daño</label>','>Fotos del daño (opcional · máximo 6)</label>')}}
+const fdpLeer=()=>({cod:$('#fCod').value,q:parseFloat($('#fQ').value)||0,tipo:$('#fTipo').value,area:$('#fArea').value,causa:$('#fCausa').value,accion:$('#fAcc').value,desc:$('#fDesc').value.trim()});
+const fdpValida=d=>{if(d.desc.length<10){toast('Describe qué pasó (mínimo una frase).','er');return false}if(d.q<=0){toast('La cantidad debe ser mayor que 0.','er');return false}if(!d.cod){toast('Elige el material.','er');return false}return true};
+async function fdpGuardar(proy,el){const d=fdpLeer();if(!fdpValida(d))return null;const files=$('#fFoto')?$('#fFoto').files:[];let id=null,fo=null;
+ await sbAccion(el,'Enviando…',async()=>{const {data,error}=await SB.rpc('alm_fdp_crear',{p:Object.assign({proy},d)});if(error)throw error;id=data.id;
+  if(files&&files.length){el&&(el.textContent='Subiendo fotos…');fo=await fotosSubir(id,files)}
+  await cargarDatos()});
+ if(id&&fo){if(fo.err.length)toast(`${id} quedó guardado, pero ${fo.err.length} foto(s) no subieron: ${esc(fo.err[0])}. Agrégalas desde «Ver».`,'wa');else if(fo.omit)toast(`Se subieron 6 fotos; ${fo.omit} se omitieron (máximo 6).`,'wa')}
+ return id}
+ACT.fdpSave=async(v,el)=>{const id=await fdpGuardar($('#fProy').value,el);if(!id)return;closeModal();rerender();toast(id+' enviado a Gerencia para aprobación.','ok')};
+ACT.fdpSet=async(v,el)=>{const [id,e]=v.split('|');const obs=$('#fObs')?$('#fObs').value.trim():'';
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_fdp_resolver',{p_id:id,p_estado:e,p_obs:obs});if(error)throw error;
+  await cargarDatos();closeModal();rerender();const f=S.fdp.find(x=>x.id===id);
+  toast(id+': '+e.toLowerCase()+'.'+(e==='Aprobado'&&f?` Ya se puede pedir la reposición de ${qf(f.q)} ${esc(M(f.cod).desc)} (${f.proy}). La pieza dañada sigue cargada al tanque.`:''),'ok')})};
+
+/* Ver el formato: fotos con enlaces firmados de 1 hora y botón para agregar fotos */
+{const _fv=fdpVer;fdpVer=function(id){_fv(id);const f=S.fdp.find(x=>x.id===id);if(!f)return;const mb=$('#modal .mbox');if(!mb)return;const kv=mb.querySelector('.kv');if(!kv)return;
+ const puede=U.user&&ROL_FOTO.includes(U.user.rol)&&(FOTOS[id]||[]).length<6;
+ kv.insertAdjacentHTML('afterend',`<div id="fdpFotos" style="margin-top:12px">${(FOTOS[id]||[]).length?'<p class="mut3" style="font-size:12.5px">Cargando fotos…</p>':''}</div>${puede?`<div class="fld" style="margin-top:10px"><label for="fAdd">Agregar fotos del daño (opcional)</label><input class="inp" id="fAdd" type="file" accept="image/*" multiple style="padding-top:8px"></div><button class="btn ghost sm" data-act="fdpFotoAdd" data-v="${esc(id)}" style="margin-top:8px">${icon('up',14)}Subir fotos</button>`:''}`);
+ const L=FOTOS[id]||[];if(!L.length)return;
+ SB.storage.from('alm-fotos').createSignedUrls(L.map(x=>x.ruta),3600).then(({data,error})=>{const box=$('#fdpFotos');if(!box)return;if(error||!data){box.innerHTML='<p class="mut3">No se pudieron mostrar las fotos.</p>';return}
+  box.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px">${data.map((u,i)=>u.signedUrl?`<a href="${esc(u.signedUrl)}" target="_blank" rel="noopener" title="${esc(L[i].tomada_por)} · ${esc((L[i].creado_en||'').slice(0,16).replace('T',' '))}"><img src="${esc(u.signedUrl)}" alt="Foto ${i+1} de ${esc(id)}" style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--bd2)"></a>`:'').join('')}</div><p class="mut3" style="font-size:12px;margin-top:6px">${L.length} foto(s). Clic para verla grande.</p>`}).catch(()=>{})}}
+ACT.fdpVer=fdpVer;
+ACT.fdpRev=id=>{fdpVer(id);fdpRev0(id)};
+function fdpRev0(id){const mb=$('#modal .mbox');if(!mb)return;mb.querySelector('.mf').insertAdjacentHTML('beforebegin',`<div class="fld" style="margin-top:14px"><label for="fObs">Observación de Gerencia</label><input class="inp" id="fObs" placeholder="Ej.: aprobada; revisar protección de rodillos"></div><p class="mut3" style="font-size:12.5px;margin-top:8px">Si la apruebas, la cantidad se suma al tope del BOM para pedir la reposición. La pieza dañada no vuelve al almacén: sigue cargada al tanque.</p>`);mb.querySelector('.mf').insertAdjacentHTML('afterbegin',`<button class="btn dng" data-act="fdpSet" data-v="${id}|Rechazado">Rechazar</button><button class="btn" data-act="fdpSet" data-v="${id}|Aprobado">${icon('check',16)}Aprobar reposición</button>`)}
+ACT.fdpFotoAdd=async(v,el)=>{const fl=$('#fAdd')&&$('#fAdd').files;if(!fl||!fl.length){toast('Elige una o varias fotos.','er');return}
+ const libres=6-(FOTOS[v]||[]).length;let r=null;
+ await sbAccion(el,'Subiendo…',async()=>{r=await fotosSubir(v,[...fl].slice(0,libres));await cargarDatos()});
+ if(!r)return;rerender();fdpVer(v);toast(r.err.length?`${r.ok} foto(s) subidas; ${r.err.length} con error: ${esc(r.err[0])}`:`${r.ok} foto(s) agregadas a ${v}.`,r.err.length?'wa':'ok')};
+
+/* ---------- QR del taller y solicitud con sesión: devolver y reportar daño ---------- */
+const kqOn=()=>typeof KQ!=='undefined'&&KQ.on;
+{const _rk=renderKiosk;renderKiosk=function(){
+ if(kqOn()&&K.step===4&&(K.mode==='dev'||K.mode==='fdp')&&KQ.ent){const keep=S.movs;S.movs=KQ.ent;try{_rk()}finally{S.movs=keep}}else _rk();
+ if(K.step===4&&K.mode==='dev'){const p=$('.kcard p.mut');if(p)p.textContent='Solo aparece lo que la app le entregó a este proyecto y sigue en planta. Almacén confirma cuando lo recibe.'}}}
+ACT.kDev=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const base=kqOn()?KQ.ent:S.movs;
+ const ent={};base.filter(m=>m.proy===p).forEach(m=>{ent[m.cod]=(ent[m.cod]||0)+(m.t==='Salida'?m.q:m.t==='Devolución'?-m.q:0)});
+ const L=Object.entries(K.sel).map(([cod,q])=>({cod,q:+q})).filter(l=>l.q>0);if(!L.length){toast('Elige al menos un material.','er');return}
+ for(const l of L){const max=kqOn()?(ent[l.cod]||0):enPlanta(p,l.cod);if(l.q>max+1e-9){toast(esc(l.cod)+': no puedes devolver más de lo que hay en planta ('+qf(max)+').','er');return}}
+ const motivo=($('#kMot')||{value:'Otro'}).value;
+ await sbAccion(el,'Enviando…',async()=>{let r;
+  if(kqOn())r=await SB.rpc('alm_kiosk_devolver',{p_token:window.QR_TOKEN,p:{pide_cod:KQ.tec.cod,pide_ini:KQ.tec.ini,proy:p,motivo,lineas:L}});
+  else r=await SB.rpc('alm_dev_pedir',{p:{proy:p,motivo,lineas:L,pide:K.tec.nombre}});
+  if(r.error)throw r.error;
+  if(kqOn()){try{await kqCargar(KQ.tec.cod,KQ.tec.ini)}catch(e){}}else await cargarDatos();
+  K.done='Devolución '+(r.data.ids||[]).join(', ')+' enviada';K.doneMsg='Lleva el material al almacén. Cuando lo reciban, se descuenta del proyecto.';K.step=6;K.sel={};renderKiosk()})};
+ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(!fdpValida(d))return;const files=$('#fFoto')?$('#fFoto').files:[];
+ await sbAccion(el,'Enviando…',async()=>{let id;
+  if(kqOn()){const {data,error}=await SB.rpc('alm_kiosk_fdp',{p_token:window.QR_TOKEN,p:Object.assign({pide_cod:KQ.tec.cod,pide_ini:KQ.tec.ini,proy:p},d)});if(error)throw error;id=data.id;try{await kqCargar(KQ.tec.cod,KQ.tec.ini)}catch(e){}}
+  else{const {data,error}=await SB.rpc('alm_fdp_crear',{p:Object.assign({proy:p},d)});if(error)throw error;id=data.id;if(files&&files.length){const fo=await fotosSubir(id,files);if(fo.err.length)toast(fo.err.length+' foto(s) no subieron: agrégalas desde la app.','wa')}await cargarDatos()}
+  K.done='Formato '+id+' enviado';K.doneMsg='Gerencia lo revisa. Cuando lo apruebe podrás pedir la reposición aquí mismo. La pieza dañada sigue cargada al tanque.';K.step=6;renderKiosk()})};
+
+/* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
+ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
+ try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos'];
+  const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
+  let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
+  T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
+   if(k==='alm_usuarios')rows.forEach(r=>r.id=null);
+   const ov=ID.includes(k)?' overriding system value':'';
+   t+=`insert into public.${k}${ov} select * from jsonb_populate_recordset(null::public.${k}, '${sqlTxt(JSON.stringify(rows))}'::jsonb) on conflict do nothing;\n`});
+  ID.forEach(k=>{t+=`select setval(pg_get_serial_sequence('public.${k}','id'), greatest(1,(select coalesce(max(id),1) from public.${k})));\n`});
+  t+=`update public.alm_usuarios u set id = a.id from auth.users a where lower(a.email) = u.email and u.id is null;\ncommit;\n`;
+  if(await saveFile('Copia_Latamks_Almacen_'+fstamp()+'.sql',new Blob([t],{type:'application/sql'}))){try{localStorage.setItem(CKEY,HOY)}catch(e){}rerender()}}
+ catch(e){console.error(e);toast('No se pudo generar la copia: '+sbErr(e),'er')}
+ finally{if(el)el.disabled=false}};
 
 </script>
 </body>
