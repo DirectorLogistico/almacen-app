@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='3.9 · fase 4';
+const VERSION='4.0 · bloque 1';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -2449,7 +2449,7 @@ const ACT={
  uZ:v=>{U.f.uZ=U.f.uZ===v?'':v;rerender()},qrUb:v=>qrUb(v),
  endCnt:endCnt,aprAj:v=>aprAj(+v,true),recAj:v=>aprAj(+v,false),
  repX:v=>runRep(v,'x'),repP:v=>runRep(v,'p'),
- newUser:()=>modal(mh('Agregar usuario','En la app real se crea la cuenta en Supabase y la persona recibe un correo para poner su contraseña.')+`<div class="fld"><label for="uE">Correo</label><input class="inp" id="uE" type="email" placeholder="auxalmacen6@latamks.com"></div><div class="two" style="margin-top:12px"><div class="fld"><label for="uN">Nombre</label><input class="inp" id="uN"></div><div class="fld"><label for="uR">Perfil</label><select class="sel" id="uR">${Object.keys(ROLES).map(r=>`<option>${r}</option>`).join('')}</select></div></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="saveUser">Agregar</button></div>`),
+ newUser:()=>modal(mh('Agregar usuario','En la app real se crea la cuenta en Supabase y la persona recibe un correo para poner su contraseña.')+`<div class="fld"><label for="uE">Correo</label><input class="inp" id="uE" type="email" placeholder="nombre@latamks.com"></div><div class="two" style="margin-top:12px"><div class="fld"><label for="uN">Nombre</label><input class="inp" id="uN"></div><div class="fld"><label for="uR">Perfil</label><select class="sel" id="uR">${Object.keys(ROLES).map(r=>`<option>${r}</option>`).join('')}</select></div></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="saveUser">Agregar</button></div>`),
  saveUser:()=>{const e=$('#uE').value.trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[a-z]+$/.test(e)){toast('Escribe un correo válido.','er');return}if(S.users.some(u=>u.email===e)){toast('Ese correo ya existe.','er');return}S.users.push({email:e,nombre:$('#uN').value.trim()||e,rol:$('#uR').value});save();closeModal();rerender();toast('Usuario agregado.','ok')},
  togUser:v=>{const u=S.users[+v];u.activo=u.activo===false;save();rerender()},
  qrSolDl:()=>{const c=$('#qrSol canvas');if(c)c.toBlob(b=>saveFile('QR_solicitud_material.png',b),'image/png')},
@@ -3158,7 +3158,7 @@ PERM['Diseño']=['proy.new','bom.edit','ot.lib','mod.edit'];PERM['Compras']=['oc
 NAV.forEach(n=>{if(!n.id||!n.r)return;if(['dash','proy','mat','flujo','ajus','kdx','traz'].includes(n.id))n.r.push('Diseño');if(['dash','proy','oc','ea','mat','rep','kdx','flujo','ajus','inf'].includes(n.id))n.r.push('Compras')});
 (()=>{const i=NAV.findIndex(n=>n.id==='proy');NAV.splice(i+1,0,{id:'mod',t:'Modelos y kits',ic:'layers',r:['Gerencia','Auxiliar','Auditoría','Diseño','Compras']});
  const j=NAV.findIndex(n=>n.id==='oc');NAV.splice(j,0,{id:'proyc',t:'Proyección de compras',ic:'trend',r:['Gerencia','Auxiliar','Auditoría','Compras'],badge:()=>(S.reqs||[]).filter(r=>r.estado==='Pendiente').length})})();
-const USERS_NEW=[{email:'juan.gonzalez@latamks.com',nombre:'Gerencia · Juan González',rol:'Gerencia'},{email:'diseno@latamks.com',nombre:'Diseño 1',rol:'Diseño'},{email:'compras@latamks.com',nombre:'Compras 1',rol:'Compras'}];
+const USERS_NEW=[];
 Object.assign(ACT,{modVer,modSave,kitEd,kitSave,kiAdd:()=>{kiRead();KED.lineas.push({cod:'',desc:'',q:1});kitDraw()},kiDel:v=>{kiRead();KED.lineas.splice(+v,1);kitDraw()},otLib,otLibGo,reqNew,ocSug,ocSugGo});
 
 /* ================= Proyectos: tablero de mando en tiempo real =================
@@ -3970,7 +3970,7 @@ VIEWS.ajw=function(){const f=U.f;const d=f.ajD||addD(HOY,-90),h=f.ajH||HOY;const
    En la fase 1 la app es de solo lectura: nada se guarda en el navegador ni en la base. */
 const SB_URL='https://atcmxuzlxvzijifcggzt.supabase.co';
 const SB_KEY='sb_publishable_mUcOwdElBtS7WgByHBiYAA_Bw3XsBuj';
-const SB_FASE='Fase 4';
+const SB_FASE='Bloque 1';
 const INACT_MS=12*3600*1000,AKEY='latamks_alm_ultima_actividad';
 const ROLES_TODOS=['Gerencia','Auxiliar','Inventario','Auditoría','Producción','Calidad','Diseño','Compras'];
 
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>${SB_FASE} · Devoluciones, daño o pérdida, excedentes y correcciones del BOM activos.</b> Inventario de Siesa en AL001, proyectos, BOM, liberación de la OT, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y «El BOM tiene un error» se guardan en la base de datos. Las demás operaciones (entradas, conteos, kits…) todavía no se guardan: se activan fase por fase.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y correcciones del BOM. Todavía no se guardan (bloques 2 a 6 del plan): órdenes de compra, entradas, calidad, corte, kits, EPP, conteos y liberaciones.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4807,6 +4807,128 @@ ACT.bcGo=async(v,el)=>{const [id,ok]=v.split('|');const g=x=>($('#'+x)||{}).valu
 
 /* ---------- Editar el BOM a mano: pasa por la corrección, que deja historial ---------- */
 ['bomEd','bomDel'].forEach(a=>{ACT[a]=()=>toast('Para cambiar el BOM usa «El BOM tiene un error» (Solicitudes › Nueva solicitud): Gerencia lo corrige y queda el historial antes → después.','wa')});
+
+/* ================= Bloque 1 · Datos y catálogo (v4.0) =================
+   - Materiales: crear, editar (descripción, familia, vida útil, ubicación), mínimos y máximos.
+   - Cargador por Excel de las piezas CL ya cortadas (conteo físico, solo Gerencia).
+   - Técnicos: agregar, editar, habilitar y deshabilitar. No se borran.
+   - Proyectos: editar y cerrar o reabrir. Solicitudes: anular o cerrar saldo (Gerencia).
+   - Decisión 34: lo que un perfil no puede hacer se ve desactivado (no oculto). */
+
+if(!PERM['Auxiliar'].includes('tec.edit'))PERM['Auxiliar'].push('tec.edit');
+
+/* ---------- Leer mínimos, máximos, vida útil y cierre de proyectos ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [ma,pr]=await Promise.all([leerTodo('alm_materiales','cod,minimo,maximo,vida_util_dias,origen','cod'),leerTodo('alm_proyectos','id,cerrado_en','id')]);
+ ma.forEach(x=>{const m=MI[x.cod];if(!m)return;if(x.minimo!=null)m.min=+x.minimo;else delete m.min;if(x.maximo!=null)m.max=+x.maximo;else delete m.max;if(x.vida_util_dias)m.vida=+x.vida_util_dias;if(x.origen==='App')m.src='Creado en la app'});
+ pr.forEach(x=>{const p=P(x.id);if(p)p.cerrado=x.cerrado_en||''});
+}}
+
+/* ---------- Material nuevo ---------- */
+ACT.saveMat=async(v,el)=>{const g=x=>($('#'+x)||{value:''}).value;const cod=g('nmCod').trim().toUpperCase(),desc=g('nmDesc').trim().toUpperCase();
+ if(!cod||!desc){toast('Escribe el código y la descripción.','er');return}if(MI[cod]){toast('El código '+esc(cod)+' ya existe.','er');return}
+ const bod=g('nmBod')==='CON01'?'AL001':g('nmBod');const q=+g('nmQ')||0;
+ if(q>0&&U.user.rol!=='Gerencia'){toast('La existencia inicial solo la pone Gerencia. Deja la existencia en 0: entra con Siesa o con una entrada de almacén.','er');return}
+ const p={cod,item:g('nmItem').trim(),desc,fam:$('#nmGas')&&$('#nmGas').checked?'Consumibles':g('nmFam'),um:g('nmUm'),bod,ub:g('nmUb').trim(),costo:+g('nmCu')||0,q,vida:g('nmVida'),min:g('nmMin'),max:g('nmMax')};
+ await sbAccion(el,'Creando…',async()=>{const {error}=await SB.rpc('alm_material_crear',{p});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Material '+esc(cod)+' creado'+(q?' con '+qf(q)+' de existencia inicial (queda en el kárdex)':'')+'.','ok')})};
+/* La bodega CON01 no se usa (decisión 52) */
+{const _nm=newMat;newMat=function(){_nm();const o=$('#nmBod option[value="CON01"]');if(o)o.remove();
+ if(U.user.rol!=='Gerencia'){const q=$('#nmQ');if(q){q.value=0;q.disabled=true;q.title='La existencia inicial solo la pone Gerencia'}}}}
+ACT.newMat=()=>newMat();
+
+/* ---------- Editar material: descripción, familia, vida útil y ubicación ---------- */
+ACT.saveEditMat=async(v,el)=>{const m=M(v);const d=$('#emDesc').value.trim();if(!d){toast('La descripción no puede quedar vacía.','er');return}
+ const ubs=[];let cambio=false;Object.keys(m.stk).forEach((b,i)=>{const s=$('#emB'+i);if(s&&s.value!==b)cambio=true;ubs.push({bod:b,ub:($('#emU'+i)||{value:''}).value.trim()})});
+ if(cambio){toast('El cambio de bodega mueve existencia: se hará con un traslado cuando se active Inventario. Aquí solo cambia la ubicación.','wa');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_material_editar',{p:{cod:v,desc:d,fam:$('#emFam').value,vida:($('#emVida')||{value:''}).value,ubs}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(esc(v)+' actualizado.','ok')})};
+
+/* ---------- Mínimos y máximos (Gerencia): se guardan al salir de la casilla ---------- */
+document.addEventListener('change',async e=>{const el=e.target;if(!el||!el.dataset||el.dataset.mm==null||!U.user)return;
+ const c=el.dataset.mm.split('|')[0];const m=M(c);const val=x=>x==null||x===''?null:+x;
+ try{const {error}=await SB.rpc('alm_mm_guardar',{p_cod:c,p_min:val(m.min),p_max:val(m.max)});if(error)throw error;toast('Mínimo y máximo de '+esc(c)+' guardados.','ok')}
+ catch(x){toast('No se guardó: '+sbErr(x),'er');try{await cargarDatos();rerender()}catch(y){}}},true);
+
+/* ---------- Técnicos ---------- */
+ACT.saveTec=async(v,el)=>{const g=x=>($('#'+x)||{value:''}).value.trim();const nom=g('tNom'),ini=g('tIni').toUpperCase();if(!nom||!ini){toast('Escribe el nombre y las iniciales.','er');return}
+ const tallas={};['camisa','pantalon','botas','guantes'].forEach(k=>tallas[k]=g('tt'+k));
+ const p={cod:v||g('tCod').toUpperCase(),nombre:nom,ini,cargo:g('tCar'),sec:g('tSec'),lider:!!($('#tLid')&&$('#tLid').checked),tallas,nuevo:!v};
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_tecnico_guardar',{p});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Técnico '+esc(p.cod)+' guardado.','ok')})};
+{const _et=editTec;editTec=function(cod){_et(cod);if(!cod){const c=$('#tCod');if(c){const n=S.tecs.reduce((a,t)=>Math.max(a,+(String(t.cod).match(/\d+$/)||[0])[0]),0)+1;c.value='TEC'+String(n).padStart(3,'0')}}
+ if(U.user.rol!=='Gerencia'){const l=$('#tLid');if(l){l.disabled=true;l.parentNode.title='Solo Gerencia marca quién es líder'}}}}
+ACT.editTec=v=>editTec(v);
+const tecActivo=async(cod,activo)=>{const {error}=await SB.rpc('alm_tecnico_activo',{p_cod:cod,p_activo:activo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(esc(T(cod).nombre)+(activo?' habilitado.':' deshabilitado: ya no aparece en listas ni en el QR.'),'ok')};
+ACT.togTec=async(v,el)=>{const t=T(v);await sbAccion(el,'…',()=>tecActivo(v,!t.activo))};
+ACT.togTecM=async(v,el)=>{await sbAccion(el,'…',()=>tecActivo(v,false))};
+ACT.delTec=v=>{const t=T(v);modal(mh('Eliminar a '+esc(t.nombre),'')+`<p class="mut" style="line-height:1.55">Los técnicos no se borran: sus solicitudes, devoluciones y entregas son la trazabilidad. Si ya no trabaja aquí, <b>deshabilítalo</b>: deja de aparecer en las listas y en el QR, y su historial se conserva.</p><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button>${t.activo?`<button class="btn" data-act="togTecM" data-v="${esc(v)}">Deshabilitar</button>`:''}</div>`,'s')};
+ACT.delTecGo=v=>ACT.delTec(v);
+
+/* ---------- Proyectos: editar, cerrar o reabrir ---------- */
+ACT.saveEditP=async(v,el)=>{const g=x=>($('#'+x)||{value:''}).value;const d=g('epDesc').trim();if(!d){toast('La descripción no puede quedar vacía.','er');return}
+ const est=g('epEst'),cie=g('epCie');
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_proyecto_editar',{p:{id:v,cliente:g('epCli').trim(),po:g('epPo').trim(),desc:d,inicio:g('epCre'),estado:est,cerrado:est==='Cerrado'?cie:''}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast('Proyecto '+v+(est==='Cerrado'?' cerrado.':' actualizado.'),'ok')})};
+
+/* ---------- Solicitudes: anular o cerrar saldo (Gerencia) ---------- */
+{const _da=ACT.delAsk;ACT.delAsk=(v,el)=>{const i=v.indexOf('|');const t=v.slice(0,i),id=v.slice(i+1);
+ if(t==='sol'){const s=S.sols.find(x=>x.id===id);if(!s)return;const par=s.lineas.some(l=>l.ent>0);
+  if(!['Pendiente','Por aprobar','En preparación','Parcial'].includes(s.estado)){toast(`${id} está ${s.estado.toLowerCase()}: no se anula.`,'wa');return}
+  modal(mh((par?'Cerrar saldo de ':'Anular ')+id,par?'Lo entregado se queda; lo que falta por entregar se cancela. No mueve inventario.':'La solicitud no tiene entregas. Queda anulada con el motivo; no mueve inventario.')+`<div class="fld"><label for="solAn">Motivo</label><input class="inp" id="solAn" placeholder="Ej.: ya no se necesita; se pidió dos veces"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="solAnular" data-v="${esc(id)}">${par?'Cerrar saldo':'Anular solicitud'}</button></div>`,'s');return}
+ if(t==='solEnt'){toast('Las entregas no se borran: si hubo un error, el material vuelve con una devolución.','wa');return}
+ if(t==='tec'){ACT.delTec(id);return}
+ return _da(v,el)}}
+ACT.solAnular=async(v,el)=>{const mo=($('#solAn').value||'').trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_sol_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+(data.estado==='Anulada'?' anulada.':': saldo cerrado; queda como entregada.'),'ok')})};
+
+/* ---------- Cargador de piezas CL (conteo físico) ---------- */
+TPL.cl={n:'Plantilla_piezas_CL_conteo',cols:['Código','Descripción','Cantidad','Bodega','Costo unitario','Ubicación'],ej:['CL-TQ3K-001','OREJA DE IZAJE TANQUE 3000 GL',12,'MP001','','MP-CL1-2']};
+IMPF.cl={
+ parse(rows){const h=hdr(rows,['CODIGO','CANTIDAD']);if(!h)return{ok:false,err:'No encontré las columnas «Código» y «Cantidad». Usa la plantilla de piezas CL.'};
+  const cc=h.col('CODIGO'),cd=h.col('DESCRIP'),cq=h.col('CANTIDAD'),cb=h.col('BODEGA'),ck=h.col('COSTO'),cu=h.col('UBICA');
+  const L=[],E=[],vistos={};
+  rows.slice(h.i+1).forEach((r,k)=>{const cod=String(r[cc]==null?'':r[cc]).trim().toUpperCase();if(!cod)return;const fila=h.i+k+2;
+   const q=numv(r[cq]),bod=(cb>=0?String(r[cb]||'').trim().toUpperCase():'')||'MP001',costo=ck>=0&&r[ck]!==''&&r[ck]!=null?numv(r[ck]):null,desc=cd>=0?String(r[cd]||'').trim():'';
+   if(!/^CL/.test(cod)){E.push('Fila '+fila+': '+cod+' no empieza por CL');return}
+   if(isNaN(q)||q<0){E.push('Fila '+fila+': '+cod+' sin cantidad válida');return}
+   if(!['MP001','AL001'].includes(bod)){E.push('Fila '+fila+': '+cod+' con bodega '+bod+' (solo MP001 o AL001)');return}
+   if(costo!=null&&(isNaN(costo)||costo<0)){E.push('Fila '+fila+': '+cod+' con costo no válido');return}
+   if(!MI[cod]&&!desc){E.push('Fila '+fila+': '+cod+' es nueva y no tiene descripción');return}
+   if(MI[cod]&&!MI[cod].cl){E.push('Fila '+fila+': '+cod+' existe y no es pieza de corte');return}
+   if(vistos[cod+bod]){E.push('Fila '+fila+': '+cod+' en '+bod+' está repetida');return}vistos[cod+bod]=1;
+   L.push({cod,desc,q,bod,costo,ub:cu>=0?String(r[cu]||'').trim():''})});
+  return{ok:L.length>0&&!E.length,L,E}},
+ prev(d){if(d.err)return errBox(d.err,[]);if(d.E.length)return errBox('Hay '+d.E.length+' filas con error. Corrígelas en el Excel y vuelve a elegir el archivo:',d.E);
+  const nuevas=d.L.filter(l=>!MI[l.cod]).length;const dif=d.L.filter(l=>{const m=MI[l.cod];return !m||Math.abs((m.stk[l.bod]||0)-l.q)>1e-9});
+  return`<div class="note">${icon('check',16)}<span><b>${d.L.length} piezas CL listas.</b> ${nuevas} nuevas · ${dif.length} con existencia diferente (cada diferencia queda en el kárdex como «Ajuste · Carga piezas CL (conteo)») · ${d.L.length-dif.length} sin cambio. Las que no traen costo quedan sin costo hasta el corte en la app.</span></div>`+
+   tbl(['Código','Descripción','Bodega','Antes','Conteo','Costo'],dif.slice(0,12).map(l=>{const m=MI[l.cod];return[esc(l.cod),esc(m?m.desc:l.desc),l.bod,m?qf(m.stk[l.bod]||0):'nueva',qf(l.q),l.costo!=null?mm(l.costo):(m&&m.costo?mm(m.costo):'sin costo')]}),[3,4])},
+ async applyDb(d,archivo){const {data,error}=await SB.rpc('alm_importar_cl',{p_filas:d.L,p_archivo:archivo});if(error)throw error;return'Piezas CL cargadas: '+data.nuevos+' nuevas y '+data.ajustes+' ajustes en el kárdex.'}
+};
+{const _imp=ACT.imp;ACT.imp=v=>{
+ if(v==='cl'){if(!U.user||U.user.rol!=='Gerencia'){toast('Solo Gerencia carga las piezas CL.','wa');return}impModal('cl','Cargar piezas CL (conteo físico)','Usa la plantilla: Código (empieza por CL), Descripción (obligatoria si la pieza es nueva), Cantidad contada, Bodega (MP001 apartadas a proyectos o AL001 stock; si va vacía, MP001), Costo unitario (opcional) y Ubicación (opcional). La existencia queda igual al conteo.');return}
+ if(v==='tec'){toast('Agrega los técnicos uno por uno con «Nuevo técnico».','i');return}
+ return _imp(v)}}
+function sbBotonCL(){const b=$('[data-act="imp"][data-v="maestro"]');if(!b||$('[data-act="imp"][data-v="cl"]'))return;
+ const n=document.createElement('button');n.className=b.className;n.dataset.act='imp';n.dataset.v='cl';n.innerHTML=icon('up',16)+'Cargar piezas CL (conteo)';b.parentNode.insertBefore(n,b)}
+new MutationObserver(()=>{if(U.user)sbBotonCL()}).observe(document.body,{childList:true,subtree:true});
+
+/* ---------- Decisión 34: lo que no le corresponde al perfil se ve desactivado ---------- */
+const ACT_PERM={bomDel:'bom.edit',bomDelAll:'bom.edit',bomEd:'bom.edit',bomRep:'bom.edit',editP:'bom.edit',calNo:'cal.lib',calOk:'cal.lib',newVal:'cal.new',
+ aprAj:'cnt.aprobar',recAj:'cnt.aprobar',endCnt:'cnt.contar',chatVenta:'corte.new',newCorte:'corte.new',devPedir:'dev.pedir',devRecibir:'dev.recibir',
+ eaDel:'ea.del',eaEd:'ea.edit',newEA:'ea.new',entEpp:'epp.ent',fdpRev:'fdp.aprobar',fdpNew:'fdp.new',askFotos:'fotos.del',bajaGas:'gas.baja',betts:'kit.betts',prepKit:'kit.prep',
+ newMat:'mat.new',editMat:'mat.new',unirAsk:'mat.new',impOC:'oc.new',newOC:'oc.new',ocAnular:'oc.new',ocSug:'oc.new',repOC:'oc.new',otLib:'ot.lib',newP:'proy.new',
+ solRev:'sol.aprob',confSol:'sol.conf',solEd:'sol.edit',entSol:'sol.ent',simSol:'sol.ent',kioskIn:'sol.new',prepSol:'sol.prep',delTec:'tec.edit',editTec:'tec.edit',togTec:'tec.edit'};
+const permDe=el=>{const a=el.dataset.act;if(a==='imp')return el.dataset.v==='tec'?'tec.edit':'mat.import';return ACT_PERM[a]||null};
+const canReal=can;
+can=function(a){if(window.__pintando&&U.user)return true;return canReal(a)};
+{const _r=render;render=function(){window.__pintando=true;try{return _r.apply(this,arguments)}finally{window.__pintando=false}}}
+const quienPuede=p=>{const R=Object.keys(PERM).filter(r=>PERM[r]==='*'||(Array.isArray(PERM[r])&&PERM[r].includes(p)));return R.length?R.join(', ').replace(/, ([^,]*)$/,' y $1'):'Gerencia'};
+document.addEventListener('click',e=>{if(!U.user||U.kiosk)return;const el=e.target.closest&&e.target.closest('[data-act]');if(!el)return;const p=permDe(el);
+ if(p&&!canReal(p)){e.preventDefault();e.stopImmediatePropagation();toast('Tu perfil ('+esc(U.user.rol)+') solo puede ver esto. Lo hace: '+esc(quienPuede(p))+'.','wa')}},true);
+let offPend=false;
+function marcarOff(){offPend=false;if(!U.user||U.kiosk)return;
+ $$('[data-act]').forEach(el=>{const p=permDe(el);if(p&&!canReal(p)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Lo hace: '+quienPuede(p))}});
+ [['mm','mm.edit'],['rq','rep.edit']].forEach(([k,p])=>{if(!canReal(p))$$('[data-'+k+']').forEach(x=>{if(!x.disabled){x.disabled=true;x.title='Lo hace: '+quienPuede(p)}})})}
+new MutationObserver(()=>{if(!offPend){offPend=true;requestAnimationFrame(marcarOff)}}).observe(document.body,{childList:true,subtree:true});
 
 </script>
 </body>
