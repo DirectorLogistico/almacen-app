@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.1 · bloque 2';
+const VERSION='4.2 · bloque 3';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y correcciones del BOM. Todavía no se guardan (bloques 3 a 6 del plan): corte, chatarra, kits, EPP, conteos y liberaciones.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y correcciones del BOM. Todavía no se guardan (bloques 4 a 6 del plan): fotos de la entrega, kits, EPP, conteos y liberaciones.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4725,7 +4725,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -5018,6 +5018,65 @@ Object.assign(ACT_PERM,{calOkGo:'cal.lib',calDev:'ea.new',ocAnular:'oc.new',save
 
 /* ---------- Aviso al recargar existencias de Siesa ---------- */
 {const _pm=IMPF.mat.prev;IMPF.mat.prev=function(d){return`<div class="note wa" style="margin-bottom:10px">${icon('warn',16)}<span><b>Las entradas ya se registran en la app.</b> Esta carga deja el inventario de la app igual al de Siesa. Úsala solo cuando Siesa y la app tengan registradas las mismas entradas (por ejemplo, al cierre del mes). Si Siesa tiene una entrada que todavía no está en la app, o al revés, se descuadra.</span></div>`+_pm(d)}}
+
+/* ================= Bloque 3 · Corte láser y chatarra (v4.2) =================
+   La interfaz es la de la maqueta (app5.js: «Láminas y corte»). Cambia la capa de datos:
+   - La lámina sale de AL001 (decisiones 52 y 79) y se reparte entre los destinos por kg.
+   - Piezas de un proyecto: MP001, sin costo (la lámina ya se cargó al proyecto).
+   - Piezas a stock: AL001 con el costo de la lámina (promedio ponderado).
+   - Chatarra: un acopio; la venta no pasa de lo que hay. Gerencia fija el precio. */
+
+/* ---------- Leer cortes, ventas de chatarra y costo de las piezas a stock ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [co,cv,ex]=await Promise.all([
+  leerTodo('alm_cortes','id,fecha,hora,ot,proyecto,laminas,piezas,destinos,plan,kg_inicial,kg_chatarra,kg_retal,operario,anulado','id'),
+  leerTodo('alm_chatarra_ventas','id,fecha,comprador,documento,kg,precio_kg,registro','id'),
+  leerTodo('alm_existencias','cod,bodega,costo_unit','cod')]);
+ S.cortes=co.filter(c=>!c.anulado).map(c=>{const L=(c.laminas||[]).map(l=>({cod:l.cod,orig:l.orig,n:+l.n||1,kg:+l.kg,ret:+l.ret||0}));
+  return{id:c.id,f:c.fecha,h:c.hora,ot:c.ot,proy:c.proyecto,dest:(c.destinos||[]).map(x=>({d:x.d,kgPz:+x.kgPz,cons:+x.cons,val:+x.val})),lam:L[0]?L[0].cod:'',orig:L[0]?L[0].orig:'',lams:L,plan:c.plan||null,
+   kgIni:+c.kg_inicial,piezas:(c.piezas||[]).map(p=>({cod:p.cod,n:+p.n,kg:+p.kg,d:p.d,cu:+p.cu||0})),kgChat:+c.kg_chatarra,kgRet:+c.kg_retal,u:c.operario,ej:false}}).sort((a,b)=>b.id.localeCompare(a.id));
+ S.chatV=cv.map(v=>({id:v.id,f:v.fecha,comp:v.comprador,doc:v.documento,kg:+v.kg,pu:+v.precio_kg,u:v.registro}));
+ S.mats.forEach(m=>{delete m.cuStk});ex.forEach(x=>{const m=MI[x.cod];if(m&&m.cl&&x.bodega==='AL001'&&x.costo_unit!=null)m.cuStk=+x.costo_unit});
+}}
+
+/* ---------- Guardar la orden de corte ---------- */
+ACT.saveCorte=async(v,el)=>{
+ const LM=lamForm(),ini=LM.reduce((a,l)=>a+l.kg,0),ch=+$('#cChat').value||0;const piezas=[];
+ if(LM.some(l=>!l.kg)){toast('Escribe los kg de báscula de cada lámina.','er');return}
+ for(let i=0;i<CRT.n;i++){const c=$('#cpc'+i).value.trim().toUpperCase();if(c)piezas.push({cod:c,n:+$('#cpn'+i).value||1,kg:+$('#cpk'+i).value||0,d:$('#cpd'+i).value||'STOCK'})}
+ if(!ini||!piezas.length){toast('Escribe el peso inicial y al menos una pieza.','er');return}
+ const pz=piezas.reduce((a,p)=>a+p.kg,0),rt=+(ini-pz-ch).toFixed(2);if(rt<-1e-6){toast('Las piezas y la chatarra pesan más que la lámina. Revisa la báscula.','er');return}
+ const ds=[...new Set(piezas.map(p=>p.d))];if(ds.length>1&&piezas.some(p=>!(p.kg>0))){toast('Hay piezas para varios destinos: escribe los kg pesados de cada pieza para repartir la lámina.','er');return}
+ const noCat=[...new Set(piezas.filter(p=>!MI[p.cod]||!MI[p.cod].cl).map(p=>p.cod))];if(noCat.length){toast('Estas piezas no existen como piezas de corte en el catálogo: '+esc(noCat.join(', '))+'. Créalas en «Nuevo material» (código CL…) o cárgalas con el BOM.','er');return}
+ const pf=planForm();const plan=(pf.pl||pf.ne||pf.pz.length)?{e:pf.e,pl:pf.pl,ne:pf.ne,corte:pf.corte,pz:pf.pz.map(p=>[p.cod,p.a,p.b,p.q])}:null;
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_corte_registrar',{p:{ot:$('#cOt').value.trim(),chat:ch,plan,lams:LM.map(l=>({cod:l.cod,orig:l.orig,n:l.n,kg:l.kg})),piezas}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();
+  toast(`${data.id}: ${nf1.format(+data.consumido)} kg de lámina → ${(data.destinos||[]).map(x=>dLbl(x.d)+' '+nf1.format(+x.cons)+' kg').join(' · ')}. Retal de ${nf1.format(+data.retal)} kg sigue con el código de la lámina; ${nf1.format(ch)} kg de chatarra al acopio.`,'ok')})};
+
+/* ---------- Anular una orden de corte (Gerencia) ---------- */
+{const _da=ACT.delAsk;ACT.delAsk=(v,el)=>{const t=v.slice(0,v.indexOf('|')),id=v.slice(v.indexOf('|')+1);
+ if(t==='corte'){modal(mh('Anular '+esc(id),'La lámina vuelve a AL001 y se descuenta de los proyectos; las piezas salen de su bodega. Queda el registro.')+`<p class="mut" style="line-height:1.55">Solo se puede si las piezas no se han entregado, el retal no se usó en otro corte y la chatarra no se vendió.</p><div class="fld" style="margin-top:10px"><label for="coAn">Motivo</label><input class="inp" id="coAn" placeholder="Ej.: se pesó mal la chatarra"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="corteAnularGo" data-v="${esc(id)}">Anular orden</button></div>`,'s');return}
+ if(t==='chv'){toast('Las ventas de chatarra no se borran: si hubo un error, avisa a Gerencia.','wa');return}
+ return _da(v,el)}}
+ACT.corteAnularGo=async(v,el)=>{const mo=($('#coAn').value||'').trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_corte_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' anulada; lámina, piezas y chatarra reversadas.','ok')})};
+
+/* ---------- Venta de chatarra ---------- */
+ACT.chatVentaSave=async(v,el)=>{const kg=+$('#cvKg').value||0,pu=+$('#cvPu').value||0;
+ if(kg<=0||kg>chatStock()+1e-6){toast('Los kg deben ser mayores que 0 y no superar lo que hay en acopio ('+nf1.format(chatStock())+' kg).','er');return}
+ const comp=$('#cvComp').value.trim();if(comp.length<2){toast('Escribe el comprador.','er');return}
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_chatarra_vender',{p:{comprador:comp,documento:$('#cvDoc').value.trim(),kg,precio:pu}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${data.id}: ${nf1.format(kg)} kg vendidos por ${money(kg*pu)}.`,'ok')})};
+
+/* ---------- Precio de la chatarra (Gerencia, en Ajustes) ---------- */
+document.addEventListener('change',async e=>{if(!e.target||e.target.id!=='chP'||!U.user)return;e.stopImmediatePropagation();
+ if(U.user.rol!=='Gerencia'){toast('Solo Gerencia cambia el precio de la chatarra.','wa');rerender();return}
+ const v=+e.target.value;if(!(v>=0)){toast('Precio no válido.','er');return}
+ try{const {error}=await SB.rpc('alm_chatarra_precio',{p_precio:v});if(error)throw error;S.cfg.chatPrecio=v;toast('Precio de la chatarra: '+money(v)+' por kg.','ok')}catch(x){toast('No se guardó: '+sbErr(x),'er')}},true);
+new MutationObserver(()=>{const c=$('#chP');if(c&&U.user&&U.user.rol!=='Gerencia'&&!c.disabled){c.disabled=true;c.title='Solo Gerencia cambia el precio'}}).observe(document.body,{childList:true,subtree:true});
+
+/* ---------- Permisos visibles (decisión 34) ---------- */
+Object.assign(ACT_PERM,{saveCorte:'corte.new',chatVentaSave:'corte.new'});
 
 </script>
 </body>
