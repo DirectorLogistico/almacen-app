@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.2 · logo';
+const VERSION='4.5.3 · borrar todo';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -5404,6 +5404,48 @@ async function fotosBorrar(L,el){const ids=L.map(f=>+String(f.id).replace(/^F/,'
 ACT.fotoCleanGo=(v,el)=>fotosBorrar(fotoFil(),el);
 ACT.delFotos=(v,el)=>fotosBorrar(S.fotos.filter(f=>f.proy===v),el);
 Object.assign(ACT_PERM,{fotoClean:'fotos.del',fotoCleanGo:'fotos.del',delFotos:'fotos.del'});
+
+/* ================= v4.5.3 · «Borrar todo» real y «Arranque oficial» =================
+   En la maqueta «Borrar todo» limpiaba el navegador. En la app real borra la base de datos
+   (solo Gerencia, con copia de seguridad y escribiendo BORRAR TODO) y se bloquea para siempre
+   cuando Gerencia marca el «Arranque oficial» (decisión 86). */
+let ARRANQUE=null,BT={copia:false};
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ try{const {data}=await SB.from('alm_config').select('clave,valor');const r=(data||[]).find(x=>x.clave==='arranque_oficial');ARRANQUE=r?r.valor:null}catch(e){}
+}}
+function datosCard(){const bloq=!!ARRANQUE;
+ return`<div class="card" id="cardDatos"><div class="ch"><div><h3>Datos de la app</h3><p>${bloq?`<b>Arranque oficial:</b> ${esc(ARRANQUE.fecha||'')} por ${esc(ARRANQUE.por||'')}. Desde ese día el borrado total está bloqueado para proteger la operación real.`:'Antes del arranque oficial puedes borrar todo lo cargado en las pruebas y empezar desde cero. Cuando la app empiece a usarse de verdad, marca el arranque oficial: el borrado queda bloqueado para siempre.'}</p></div></div>
+ <div class="acts"><button class="btn dng sm" data-act="askBlank" ${bloq?'disabled title="Bloqueado por el arranque oficial"':''}>${icon('trash',14)}Borrar todo y empezar desde cero</button>${bloq?`<span class="bd ok">Arranque oficial ${esc((ARRANQUE.fecha||'').slice(0,10))}</span>`:`<button class="btn sm" data-act="askArranque">${icon('check',14)}Marcar arranque oficial</button>`}</div>
+ <p class="mut3" style="font-size:12px;margin-top:10px">Se conservan los usuarios, las firmas, los técnicos, el logo, el precio de la chatarra, las bodegas y el QR del taller. Todo lo demás se borra de la base de datos.</p></div>`}
+{const _va=VIEWS.ajus;VIEWS.ajus=function(){let h=_va.apply(this,arguments);
+ const i=h.indexOf('<div class="card"><div class="ch"><div><h3>Datos ');if(i<0)return h;
+ const fin='Antes de borrar, descarga una copia de seguridad.</p></div>';const j=h.indexOf(fin,i);if(j<0)return h;
+ return h.slice(0,i)+datosCard()+h.slice(j+fin.length)}}
+
+function btPintar(){const ok=BT.copia&&(($('#btTxt')||{}).value||'')==='BORRAR TODO';const b=$('#btGo');if(b)b.disabled=!ok;const c=$('#btCopiaOk');if(c)c.style.display=BT.copia?'inline-flex':'none'}
+ACT.askBlank=()=>{if(ARRANQUE){toast('El borrado total está bloqueado por el arranque oficial.','wa');return}BT={copia:false};
+ modal(mh('Borrar todo y empezar desde cero','Se borra de la base de datos. No se puede deshacer.')+
+ `<div class="note er">${icon('warn',16)}<span>Se borran <b>materiales, existencias, kárdex, proyectos y BOM, solicitudes, entregas, devoluciones, daños, compras, entradas, calidad, cortes, chatarra, EPP, conteos, ajustes, inventarios mensuales, liberaciones y fotos</b>. Se conservan usuarios, firmas, técnicos, logo, precio de la chatarra, bodegas y el QR. Los consecutivos vuelven a 0001.</span></div>
+ <div class="lb" style="margin:14px 0 6px">Paso 1 · Descarga la copia de seguridad</div><div class="acts"><button class="btn ghost" data-act="btCopia">${icon('down',16)}Descargar copia de seguridad</button><span class="bd ok" id="btCopiaOk" style="display:none">Copia descargada</span></div>
+ <div class="fld" style="margin-top:14px"><label for="btTxt">Paso 2 · Escribe <b>BORRAR TODO</b> en mayúsculas</label><input class="inp" id="btTxt" autocomplete="off" placeholder="BORRAR TODO"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" id="btGo" data-act="blankGo" disabled>${icon('trash',16)}Borrar todo definitivamente</button></div>`,'s');
+ const t=$('#btTxt');if(t)t.addEventListener('input',btPintar)};
+ACT.btCopia=async(v,el)=>{await sbAccion(el,'Descargando…',async()=>{let ok=false;const sf=saveFile;saveFile=async(...a)=>{const r=await sf(...a);ok=r!==false;return r};try{await ACT.copiaSQL()}finally{saveFile=sf}if(!ok)throw new Error('No se pudo descargar la copia de seguridad: no borres nada todavía');BT.copia=true;btPintar()})};
+ACT.blankGo=async(v,el)=>{if(!BT.copia){toast('Primero descarga la copia de seguridad.','er');return}const txt=($('#btTxt')||{}).value||'';if(txt!=='BORRAR TODO'){toast('Escribe BORRAR TODO, en mayúsculas.','er');return}
+ await sbAccion(el,'Borrando…',async()=>{const {data,error}=await SB.rpc('alm_borrar_todo',{p_confirm:txt});if(error)throw error;
+  let aviso='';const F=data.fotos||[],D=data.docs||[];
+  for(let i=0;i<F.length;i+=100){const r=await SB.storage.from('alm-fotos').remove(F.slice(i,i+100));if(r&&r.error)aviso=sbErr(r.error)}
+  for(let i=0;i<D.length;i+=100){const r=await SB.storage.from('alm-docs').remove(D.slice(i,i+100));if(r&&r.error)aviso=sbErr(r.error)}
+  await cargarDatos();closeModal();U.pj=null;U.f={};rerender();
+  toast('Listo: la base de datos quedó en blanco. Empieza por Materiales → «Cargar inventario (Excel)».','ok');
+  if(aviso)toast('Algunas fotos quedaron en el archivador: '+esc(aviso),'wa')})};
+ACT.askArranque=()=>{modal(mh('Marcar el arranque oficial','Desde hoy la app es la fuente oficial del almacén.')+
+ `<p class="mut" style="line-height:1.55">Al marcarlo, <b>«Borrar todo» queda bloqueado para siempre</b>: desde la app ya no se podrá borrar la operación real. Hazlo cuando hayas terminado las pruebas, borrado los datos de prueba y cargado los datos reales.</p>
+ <div class="fld" style="margin-top:12px"><label for="arTxt">Escribe <b>ARRANQUE</b> en mayúsculas</label><input class="inp" id="arTxt" autocomplete="off" placeholder="ARRANQUE"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="arranqueGo">${icon('check',16)}Marcar arranque oficial</button></div>`,'s')};
+ACT.arranqueGo=async(v,el)=>{const t=($('#arTxt')||{}).value||'';if(t!=='ARRANQUE'){toast('Escribe ARRANQUE, en mayúsculas.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_arranque_marcar',{p_confirm:t});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Arranque oficial marcado el '+esc(data.fecha)+'. El borrado total quedó bloqueado.','ok')})};
+Object.assign(ACT_PERM,{askBlank:'datos.borrar',blankGo:'datos.borrar',askArranque:'datos.borrar',arranqueGo:'datos.borrar',btCopia:'datos.borrar'});
 
 </script>
 </body>
