@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.5 · bloque 6';
+const VERSION='4.5.6 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4734,7 +4734,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -5447,46 +5447,100 @@ ACT.arranqueGo=async(v,el)=>{const t=($('#arTxt')||{}).value||'';if(t!=='ARRANQU
  await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_arranque_marcar',{p_confirm:t});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Arranque oficial marcado el '+esc(data.fecha)+'. El borrado total quedó bloqueado.','ok')})};
 Object.assign(ACT_PERM,{askBlank:'datos.borrar',blankGo:'datos.borrar',askArranque:'datos.borrar',arranqueGo:'datos.borrar',btCopia:'datos.borrar'});
 
-/* ================= v4.5.5 · Inventario inicial de RETAL =================
-   El retal sigue con el código de la lámina y está dentro de los kg de Siesa en AL001.
-   Se carga el inventario físico desde Excel (código, ancho, largo, cantidad en mm):
-   la app calcula los kg (ancho × largo × espesor × 7,93) y los separa de la lámina nueva.
-   Lámina nueva = existencia libre AL001 − retal disponible. SQL 18. */
-let RETINI=[];
+/* ================= v4.5.6 · Inventario de RETAL por piezas con medidas (SQL 18 y 19) =================
+   Cada retal es una pieza con su lámina (código de Siesa), ancho, largo, espesor y kg; las iguales se agrupan.
+   El retal está DENTRO de la existencia de Siesa de la lámina en AL001: lámina nueva = existencia − retal.
+   - Carga inicial desde Excel (Código, Descripción, Ancho, Largo, Cantidad en mm). Solo Gerencia.
+   - Orden de corte con «Retal»: se busca por medidas y se escoge la pieza; sale del inventario de retal.
+   - Retal que sobra de un corte: ancho, largo y cantidad obligatorios si pasa de 1 kg (kg de báscula).
+   - Retal que ya no sirve → chatarra (Auxiliar o Gerencia): «Baja» de AL001 y suma al acopio. */
+let RET=[],RMOV=[];
 {const _cd=cargarDatos;cargarDatos=async function(){await _cd();
- try{RETINI=(await leerTodo('alm_retales','id,cod,ancho_mm,largo_mm,espesor_mm,cantidad,kg,origen,archivo,usuario,creado_en','id')).map(r=>({id:r.id,cod:r.cod,a:+r.ancho_mm,l:+r.largo_mm,e:+r.espesor_mm,n:+r.cantidad,kg:+r.kg,arch:r.archivo,u:r.usuario,f:String(r.creado_en||'').slice(0,10)}))}catch(e){RETINI=[]}
+ try{const [r,m]=await Promise.all([
+   leerTodo('alm_retales','id,cod,ancho_mm,largo_mm,espesor_mm,cantidad,cantidad_ini,kg_unit,kg,origen,archivo,usuario,creado_en','id'),
+   leerTodo('alm_retal_movs','id,fecha,hora,tipo,retal_id,cod,ancho_mm,largo_mm,espesor_mm,n,kg,documento,usuario','id')]);
+  RET=r.map(x=>({id:x.id,cod:x.cod,a:+x.ancho_mm,l:+x.largo_mm,e:+x.espesor_mm,n:+x.cantidad,n0:+(x.cantidad_ini==null?x.cantidad:x.cantidad_ini),kgU:+(x.kg_unit==null?(+x.kg/(+x.cantidad||1)):x.kg_unit),kg:+x.kg,orig:x.origen,arch:x.archivo,u:x.usuario,f:String(x.creado_en||'').slice(0,10)}));
+  RMOV=m.map(x=>({id:x.id,f:x.fecha,h:x.hora,t:x.tipo,cod:x.cod,a:+x.ancho_mm,l:+x.largo_mm,e:+x.espesor_mm,n:+x.n,kg:+x.kg,doc:x.documento,u:x.usuario}))}
+ catch(e){RET=[];RMOV=[]}
 }}
 const espMM=d=>{const x=String(d||'').toUpperCase().match(/(\d+(?:[.,]\d+)?)\s*MM/);return x?parseFloat(x[1].replace(',','.')):NaN};
-const retIniKg=cod=>RETINI.reduce((a,r)=>a+(!cod||r.cod===cod?r.kg:0),0);
-const retCods=()=>[...new Set([...lamCods(),...RETINI.map(r=>r.cod)])];
 const libreAL=m=>Math.max(0,((m.stk||{}).AL001||0)-(m.cuar||0));
-/* Retal disponible = inventario inicial + retal de los cortes − retal usado (igual que alm_retal_disp) */
-const _retalCortes=retalDisp;
-retalDisp=function(lam){if(!lam)return retCods().reduce((a,c)=>a+retalDisp(c),0);
- let r=retIniKg(lam);S.cortes.forEach(c=>cLams(c).forEach(l=>{if(l.cod!==lam)return;r+=l.ret||0;if(l.orig==='Retal')r-=l.kg}));return Math.max(0,r)};
-retalTot=function(){return retCods().reduce((a,l)=>a+retalDisp(l),0)};
-retalVal=function(){return retCods().reduce((a,l)=>a+retalDisp(l)*(M(l).costo||0),0)};
+const medTxt=(a,l)=>nf0.format(a)+' × '+nf0.format(l)+' mm';
+const cabe=(g,A,B)=>{A=+A||0;B=+B||0;return(g.a>=A&&g.l>=B)||(g.a>=B&&g.l>=A)};
+/* Grupos: misma lámina y mismas medidas */
+function retGr(cod){const G={};RET.forEach(r=>{if(r.n<=0||(cod&&r.cod!==cod))return;const k=r.cod+'|'+r.a+'|'+r.l;const g=G[k]||(G[k]={k,cod:r.cod,a:r.a,l:r.l,e:r.e,n:0,kg:0,org:new Set()});g.n+=r.n;g.kg+=r.kg;g.org.add(r.orig)});
+ return Object.values(G).map(g=>Object.assign(g,{kgU:g.kg/g.n,org:[...g.org]}))}
+const retCods=()=>[...new Set(RET.filter(r=>r.n>0).map(r=>r.cod))];
+/* Retal disponible = suma de las piezas (igual que alm_retal_disp) */
+retalDisp=function(lam){return RET.reduce((a,r)=>a+(r.n>0&&(!lam||r.cod===lam)?r.kg:0),0)};
+retalTot=function(){return retalDisp()};
+retalVal=function(){return RET.reduce((a,r)=>a+(r.n>0?r.kg*(M(r.cod).costo||0):0),0)};
 {const _rr=retChRows;retChRows=function(){const R=_rr();const ya=new Set(R.map(x=>x.l));
  retCods().filter(l=>!ya.has(l)).forEach(l=>R.push({l,m:M(l),cort:0,ch:0,rt:retalDisp(l),n:0}));
  return R.sort((a,b)=>b.ch+b.rt-a.ch-a.rt)}}
+/* La chatarra generada incluye el retal que pasó a chatarra */
+{const _ch=chatarra;chatarra=function(desde){const r=_ch(desde);const k=RMOV.filter(m=>m.t==='A chatarra'&&(!desde||m.f>=desde)).reduce((a,m)=>a+m.kg,0);return{kg:r.kg+k,v:(r.kg+k)*precioChat()}}}
 
-/* ---------- Tarjeta «Lámina nueva y retal» en Láminas y corte ---------- */
+/* ---------- Estilos ---------- */
+document.head.insertAdjacentHTML('beforeend',`<style>
+.rsr{grid-template-columns:110px 110px minmax(0,1fr)!important;margin:-2px 0 10px!important;padding:10px 12px;border-radius:12px;background:var(--bg2,rgba(36,52,107,.05));border:1px dashed var(--bd,rgba(36,52,107,.25))}
+.rsr .sub{grid-column:1/-1;margin:0}
+.ror{grid-template-columns:minmax(0,1.6fr) 110px 110px 90px minmax(0,1fr) 34px!important;align-items:center;margin-top:6px!important}
+@media(max-width:640px){.rsr{grid-template-columns:1fr 1fr!important}.rsr select{grid-column:1/-1}.ror{grid-template-columns:1fr 1fr!important}.ror select:first-child{grid-column:1/-1}}
+.rfil{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.rfil .inp,.rfil .sel{max-width:220px}
+.bdR{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(29,74,158,.10);color:var(--rey,#1D4A9E)}
+</style>`);
+
+/* ---------- «Láminas y corte»: lámina nueva y retal + inventario de retal ---------- */
 function retalCard(){const L=S.mats.filter(m=>m.mtr&&(libreAL(m)>0||retalDisp(m.cod)>0));
- const ger=can('mat.import');const ult=RETINI.length?RETINI[RETINI.length-1]:null;
  const t=L.reduce((a,m)=>{const ex=libreAL(m),rt=Math.min(retalDisp(m.cod),ex);a.ex+=ex;a.rt+=rt;a.nv+=ex-rt;a.v+=(ex-rt)*(m.costo||0);a.rv+=rt*(m.costo||0);return a},{ex:0,rt:0,nv:0,v:0,rv:0});
- const filas=L.map(m=>{const ex=libreAL(m),rt=Math.min(retalDisp(m.cod),ex),pz=RETINI.filter(r=>r.cod===m.cod).reduce((a,r)=>a+r.n,0);
-  return`<tr><td class="nm"><b>${esc(m.cod)}</b><div class="sub">${esc(m.desc)}</div></td><td class="num" data-l="Existencia AL001">${nf1.format(ex)} kg</td><td class="num" data-l="Retal">${nf1.format(rt)} kg${pz?`<div class="sub">${nf0.format(pz)} piezas del inventario inicial</div>`:''}</td><td class="num" data-l="Lámina nueva"><b>${nf1.format(ex-rt)} kg</b></td><td class="num" data-l="Valor lámina nueva">${money((ex-rt)*(m.costo||0))}</td></tr>`}).join('');
- return`<div class="card" id="cardRetal"><div class="ch"><div><h3>Lámina nueva y retal</h3><p>Siesa trae los kg totales de cada lámina en AL001. El retal está dentro de esos kg: <b>lámina nueva = existencia − retal</b>. Así una orden con origen «Lámina nueva» no toca los kg del retal.</p></div>
- <div class="acts">${RETINI.length?`<button class="btn ghost sm" data-act="retalVer">${icon('layers',14)}Ver piezas de retal (${RETINI.reduce((a,r)=>a+r.n,0)})</button>`:''}<button class="btn sm" data-act="retalImp" ${ger?'':'disabled title="Solo Gerencia carga el inventario de retal"'}>${icon('up',14)}Cargar inventario de retal (Excel)</button></div></div>
- ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Lámina</th><th class="r">Existencia AL001 (Siesa)</th><th class="r">Retal</th><th class="r">Lámina nueva</th><th class="r">Valor lámina nueva</th></tr></thead><tbody>${filas}</tbody><tfoot><tr><td class="ttl">Total</td><td class="num">${nf1.format(t.ex)} kg</td><td class="num">${nf1.format(t.rt)} kg<div class="sub">${money(t.rv)}</div></td><td class="num">${nf1.format(t.nv)} kg</td><td class="num">${money(t.v)}</td></tr></tfoot></table></div>`:`<p class="sub">Todavía no hay láminas con existencia. Carga primero las existencias de Siesa en Materiales.</p>`}
- ${ult?`<p class="mut3" style="font-size:12px;margin-top:10px">Inventario inicial de retal: ${esc(ult.arch||'Excel')} · ${esc(ult.f)} · ${esc(ult.u)}. Volver a cargar el Excel reemplaza este inventario inicial.</p>`:''}</div>`}
+ const filas=L.map(m=>{const ex=libreAL(m),rt=Math.min(retalDisp(m.cod),ex),pz=RET.filter(r=>r.cod===m.cod&&r.n>0).reduce((a,r)=>a+r.n,0);
+  return`<tr><td class="nm"><b>${esc(m.cod)}</b><div class="sub">${esc(m.desc)}</div></td><td class="num" data-l="Existencia AL001">${nf1.format(ex)} kg</td><td class="num" data-l="Retal">${nf1.format(rt)} kg${pz?`<div class="sub">${nf0.format(pz)} piezas</div>`:''}</td><td class="num" data-l="Lámina nueva"><b>${nf1.format(ex-rt)} kg</b></td><td class="num" data-l="Valor lámina nueva">${money((ex-rt)*(m.costo||0))}</td></tr>`}).join('');
+ return`<div class="card" id="cardRetal"><div class="ch"><div><h3>Lámina nueva y retal</h3><p>Siesa trae los kg totales de cada lámina en AL001. El retal está dentro de esos kg: <b>lámina nueva = existencia − retal</b>. Una orden con origen «Lámina nueva» no toca los kg del retal.</p></div></div>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Lámina</th><th class="r">Existencia AL001 (Siesa)</th><th class="r">Retal</th><th class="r">Lámina nueva</th><th class="r">Valor lámina nueva</th></tr></thead><tbody>${filas}</tbody><tfoot><tr><td class="ttl">Total</td><td class="num">${nf1.format(t.ex)} kg</td><td class="num">${nf1.format(t.rt)} kg<div class="sub">${money(t.rv)}</div></td><td class="num">${nf1.format(t.nv)} kg</td><td class="num">${money(t.v)}</td></tr></tfoot></table></div>`:`<p class="sub">Todavía no hay láminas con existencia. Carga primero las existencias de Siesa en Materiales.</p>`}</div>`}
+function retInvCard(){const f=U.f;const ger=can('mat.import'),aux=can('corte.new');
+ const movido=RMOV.some(m=>m.t!=='Carga inicial');
+ const G=retGr().filter(g=>(!f.rtL||g.cod===f.rtL)&&(!f.rtE||String(g.e)===f.rtE)&&cabe(g,f.rtA,f.rtB)).sort((a,b)=>a.cod.localeCompare(b.cod)||a.a*a.l-b.a*b.l);
+ const all=retGr(),cods=[...new Set(all.map(g=>g.cod))].sort(),esps=[...new Set(all.map(g=>g.e))].sort((a,b)=>a-b);
+ const t=G.reduce((a,g)=>({n:a.n+g.n,kg:a.kg+g.kg,v:a.v+g.kg*(M(g.cod).costo||0)}),{n:0,kg:0,v:0});
+ const oTxt=o=>o.map(x=>x==='Carga inicial'?'Inventario inicial':x).join(', ');
+ regT('retal','Inventario de retal',['Lámina','Descripción','Espesor (mm)','Ancho (mm)','Largo (mm)','Piezas','Kg por pieza','Kg','Valor (costo Siesa)','Origen'],G.map(g=>[g.cod,M(g.cod).desc,g.e,g.a,g.l,g.n,+g.kgU.toFixed(2),+g.kg.toFixed(2),Math.round(g.kg*(M(g.cod).costo||0)),oTxt(g.org)]));
+ return`<div class="card" id="cardRetInv"><div class="ch"><div><h3>Inventario de retal</h3><p>Piezas de retal con sus medidas. Para un corte, busca la que te sirve escribiendo el ancho y el largo que necesitas: salen primero las más pequeñas que alcanzan.</p></div>
+ <div class="acts">${RMOV.length?`<button class="btn ghost sm" data-act="retHist">${icon('clock',14)}Historial</button>`:''}${xbtns('retal')}<button class="btn sm" data-act="retalImp" ${ger&&!movido?'':`disabled title="${ger?'El retal ya tuvo movimientos: la carga inicial no se puede repetir':'Solo Gerencia carga el inventario de retal'}"`}>${icon('up',14)}Cargar inventario de retal (Excel)</button></div></div>
+ <div class="rfil" style="margin-bottom:10px"><select class="sel" data-f="rtL"><option value="">Todas las láminas</option>${cods.map(c=>`<option value="${esc(c)}" ${c===f.rtL?'selected':''}>${esc(c)} · ${esc(M(c).desc.slice(0,28))}</option>`).join('')}</select>
+ <select class="sel" data-f="rtE"><option value="">Todos los espesores</option>${esps.map(e=>`<option value="${e}" ${String(e)===f.rtE?'selected':''}>${nf1.format(e)} mm</option>`).join('')}</select>
+ <span class="sub">Necesito al menos</span><input class="inp" style="max-width:120px" type="number" min="0" data-f="rtA" placeholder="Ancho mm" value="${esc(f.rtA||'')}"><span class="sub">×</span><input class="inp" style="max-width:120px" type="number" min="0" data-f="rtB" placeholder="Largo mm" value="${esc(f.rtB||'')}"><button class="btn link sm" data-act="retClr">Limpiar</button></div>
+ ${G.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Lámina</th><th class="r">Espesor</th><th class="r">Ancho × largo</th><th class="r">Piezas</th><th class="r">Kg por pieza</th><th class="r">Kg</th><th class="r">Valor</th><th>Origen</th><th></th></tr></thead><tbody>${G.map(g=>`<tr><td class="nm"><b>${esc(g.cod)}</b><div class="sub">${esc(M(g.cod).desc)}</div></td><td class="num" data-l="Espesor">${nf1.format(g.e)} mm</td><td class="num" data-l="Medidas"><b>${medTxt(g.a,g.l)}</b></td><td class="num" data-l="Piezas">${nf0.format(g.n)}</td><td class="num" data-l="Kg por pieza">${nf1.format(g.kgU)}</td><td class="num" data-l="Kg">${nf1.format(g.kg)}</td><td class="num" data-l="Valor">${money(g.kg*(M(g.cod).costo||0))}</td><td data-l="Origen"><span class="bdR">Retal</span> <span class="sub">${esc(oTxt(g.org))}</span></td><td><button class="btn ghost sm" data-act="retChat" data-v="${esc(g.k)}" ${aux?'':'disabled title="Solo el Auxiliar o Gerencia"'}>${icon('trash',14)}A chatarra</button></td></tr>`).join('')}</tbody>
+ <tfoot><tr><td class="ttl" colspan="3">Total ${G.length<all.length?'del filtro':''}</td><td class="num">${nf0.format(t.n)}</td><td></td><td class="num">${nf1.format(t.kg)} kg</td><td class="num">${money(t.v)}</td><td colspan="2"></td></tr></tfoot></table></div>`
+ :`<p class="sub">${all.length?'Ninguna pieza de retal con esas medidas.':'Todavía no hay retal cargado. Gerencia lo carga con el Excel del inventario físico (Código, Descripción, Ancho, Largo y Cantidad en mm).'}</p>`}</div>`}
 {const _vc=VIEWS.corte;VIEWS.corte=function(){let h=_vc.apply(this,arguments);
- const k='<div class="card"><div class="ch"><div><h3>Órdenes de corte</h3>';const i=h.indexOf(k);return i<0?h+retalCard():h.slice(0,i)+retalCard()+h.slice(i)}}
+ const k='<div class="card"><div class="ch"><div><h3>Órdenes de corte</h3>';const i=h.indexOf(k);const add=retalCard()+retInvCard();return i<0?h+add:h.slice(0,i)+add+h.slice(i)}}
+ACT.retClr=()=>{['rtL','rtE','rtA','rtB'].forEach(k=>delete U.f[k]);rerender()};
 
-/* ---------- Importador del retal ---------- */
+/* ---------- Pasar retal a chatarra (Auxiliar o Gerencia) ---------- */
+ACT.retChat=v=>{const g=retGr().find(x=>x.k===v);if(!g){toast('Esa pieza de retal ya no está.','wa');return}
+ modal(mh('Pasar retal a chatarra',esc(g.cod)+' · '+medTxt(g.a,g.l)+' · '+nf1.format(g.e)+' mm')+
+ `<p class="mut" style="line-height:1.55">Hay <b>${nf0.format(g.n)} piezas</b> de ${nf1.format(g.kgU)} kg. Las que pases a chatarra salen de la lámina en AL001 (queda como «Baja» en el kárdex, al costo de Siesa) y suman al acopio de chatarra para la venta.</p>
+ <div class="two"><div class="fld"><label for="rcN">Piezas</label><input class="inp" id="rcN" type="number" min="1" max="${g.n}" step="1" value="${g.n}"></div><div class="fld"><label>Kg que pasan</label><div class="inp ro" id="rcKg">${nf1.format(g.kgU*g.n)} kg</div></div></div>
+ <div class="fld" style="margin-top:10px"><label for="rcM">Motivo</label><input class="inp" id="rcM" placeholder="Ej.: muy pequeño para cortar"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="retChatGo" data-v="${esc(g.k)}">${icon('trash',16)}Pasar a chatarra</button></div>`,'s');
+ $('#rcN').addEventListener('input',()=>{const n=Math.max(0,Math.round(+$('#rcN').value||0));$('#rcKg').textContent=nf1.format(g.kgU*n)+' kg'})};
+ACT.retChatGo=async(v,el)=>{const g=retGr().find(x=>x.k===v);if(!g)return;const n=Math.round(+$('#rcN').value||0),mo=($('#rcM').value||'').trim();
+ if(n<1||n>g.n){toast('Escribe entre 1 y '+g.n+' piezas.','er');return}if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_retal_chatarra',{p_cod:g.cod,p_ancho:g.a,p_largo:g.l,p_n:n,p_motivo:mo});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${n} pieza${n>1?'s':''} de retal (${nf1.format(+data.kg)} kg) pasaron al acopio de chatarra.`,'ok')})};
+ACT.retHist=()=>{const R=RMOV.slice().reverse();
+ regT('retMov','Historial del retal',['Fecha','Hora','Movimiento','Lámina','Espesor (mm)','Ancho (mm)','Largo (mm)','Piezas','Kg','Documento','Usuario'],R.map(m=>[m.f,m.h,m.t,m.cod,m.e,m.a,m.l,m.n,m.kg,m.doc,m.u]));
+ const sg=t=>t==='Sale de corte'||t==='Carga inicial'||t==='Vuelve por anulación'?'+':'−';
+ modal(mh('Historial del retal',R.length+' movimientos')+`<div class="acts" style="margin-bottom:10px">${xbtns('retMov')}</div>`+
+  tbl(['Fecha','Movimiento','Lámina','Medidas','Piezas','Kg','Documento','Usuario'],R.map(m=>[fd(m.f)+' '+esc(m.h||''),esc(m.t),esc(m.cod),medTxt(m.a,m.l),sg(m.t)+nf0.format(m.n),sg(m.t)+nf1.format(m.kg),esc(m.doc),esc(m.u)]),[4,5],460)+
+  `<div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'w')};
+
+/* ---------- Importador del inventario inicial de retal ---------- */
 TPL.retal={n:'Plantilla_inventario_retal',cols:['CODIGO','DESCRIPCION','ANCHO','LARGO','CANTIDAD'],ej:['ES0101009NAL','LAMINA AISI 304 ACAB #4 4.5MM',1220,850,2]};
 IMPF.retal={
- parse(rows){const h=hdr(rows,['COD','ANCHO','CANTIDAD']);if(!h)return{ok:false,err:'No encontré las columnas «Código», «Ancho», «Largo» y «Cantidad».'};
+ parse(rows){if(RMOV.some(m=>m.t!=='Carga inicial'))return{ok:false,err:'El retal ya tuvo movimientos (cortes o chatarra): la carga inicial ya no se puede repetir.'};
+  const h=hdr(rows,['COD','ANCHO','CANTIDAD']);if(!h)return{ok:false,err:'No encontré las columnas «Código», «Ancho», «Largo» y «Cantidad».'};
   const cc=h.col('COD'),ca=h.col('ANCHO'),cl=h.col('LARGO')>=0?h.col('LARGO'):h.col('ALTO'),cn=h.col('CANTIDAD');if(cl<0)return{ok:false,err:'No encontré la columna «Largo» (o «Alto»).'};
   const L=[],E=[];
   rows.slice(h.i+1).forEach((r,k)=>{const cod=String(r[cc]==null?'':r[cc]).trim();if(!cod||nrmH(cod).startsWith('COD'))return;const fila=h.i+k+2,m=MI[cod];
@@ -5497,24 +5551,84 @@ IMPF.retal={
    if(!(a>0&&a<=20000)||!(l>0&&l<=20000)){E.push('Fila '+fila+': '+cod+' con medidas no válidas ('+(r[ca]??'')+' × '+(r[cl]??'')+' mm)');return}
    if(!(n>0)||n!==Math.trunc(n)){E.push('Fila '+fila+': '+cod+' con cantidad no válida ('+(r[cn]??'')+')');return}
    L.push({cod,a,l,e,n,kg:a*l*e*DENS/1e6*n})});
-  const G={};L.forEach(x=>{const g=G[x.cod]||(G[x.cod]={cod:x.cod,pz:0,kg:0,fil:0});g.pz+=x.n;g.kg+=x.kg;g.fil++});
-  const A=Object.values(G).map(g=>{const m=M(g.cod),ex=libreAL(m),cort=Math.max(0,_retalCortes(g.cod));const rt=g.kg+cort;return Object.assign(g,{m,ex,cort,rt,nv:ex-rt})});
-  A.forEach(g=>{if(g.rt>g.ex+0.001)E.push(g.cod+': el retal pesa '+nf1.format(g.rt)+' kg y en AL001 hay '+nf1.format(g.ex)+' kg libres'+(g.ex?'':' (carga primero las existencias de Siesa)'))});
-  const quita=[...new Set(RETINI.map(r=>r.cod))].filter(c=>!G[c]);
-  return{ok:L.length>0&&!E.length,L,A,E,quita,kg:L.reduce((a,x)=>a+x.kg,0)}},
+  const med=new Set(L.map(x=>x.cod+'|'+x.a+'|'+x.l)).size;
+  const G={};L.forEach(x=>{const g=G[x.cod]||(G[x.cod]={cod:x.cod,pz:0,kg:0});g.pz+=x.n;g.kg+=x.kg});
+  const A=Object.values(G).map(g=>{const m=M(g.cod),ex=libreAL(m);return Object.assign(g,{m,ex,nv:ex-g.kg})});
+  A.forEach(g=>{if(g.kg>g.ex+0.001)E.push(g.cod+': el retal pesa '+nf1.format(g.kg)+' kg y en AL001 hay '+nf1.format(g.ex)+' kg libres'+(g.ex?'':' (carga primero las existencias de Siesa)'))});
+  return{ok:L.length>0&&!E.length,L,A,E,med,kg:L.reduce((a,x)=>a+x.kg,0)}},
  prev(d){if(d.err)return errBox(d.err,[]);if(d.E.length)return errBox('Hay '+d.E.length+' errores. Corrígelos y vuelve a elegir el archivo:',d.E);
-  return`<div class="note">${icon('check',16)}<span><b>${d.L.length} filas · ${nf0.format(d.L.reduce((a,x)=>a+x.n,0))} piezas · ${nf1.format(d.kg)} kg de retal.</b> Kg = ancho × largo × espesor × 7,93 (inox 304). Esos kg se separan de la lámina nueva; el kárdex no cambia porque Siesa ya los incluye.${RETINI.length?` <b>Reemplaza el inventario inicial de retal cargado antes</b>${d.quita.length?' (sale '+d.quita.map(esc).join(', ')+')':''}.`:''}</span></div>`+
-   tbl(['Lámina','Descripción','Piezas','Retal','Existencia AL001','Lámina nueva'],d.A.map(g=>[esc(g.cod),esc(g.m.desc),nf0.format(g.pz),nf1.format(g.rt)+' kg'+(g.cort?`<div class="sub">${nf1.format(g.cort)} kg ya venían de cortes</div>`:''),nf1.format(g.ex)+' kg','<b>'+nf1.format(g.nv)+' kg</b>']),[2,3,4,5])},
+  return`<div class="note">${icon('check',16)}<span><b>${d.L.length} filas → ${d.med} medidas distintas · ${nf0.format(d.L.reduce((a,x)=>a+x.n,0))} piezas · ${nf1.format(d.kg)} kg de retal.</b> Kg = ancho × largo × espesor × 7,93 (inox 304); el espesor sale de la descripción de la lámina. Esos kg se separan de la lámina nueva; el kárdex no cambia porque Siesa ya los incluye.${RET.length?' <b>Reemplaza la carga inicial anterior.</b>':''}</span></div>`+
+   tbl(['Lámina','Descripción','Piezas','Retal','Existencia AL001','Lámina nueva'],d.A.map(g=>[esc(g.cod),esc(g.m.desc),nf0.format(g.pz),nf1.format(g.kg)+' kg',nf1.format(g.ex)+' kg','<b>'+nf1.format(g.nv)+' kg</b>']),[2,3,4,5])},
  async applyDb(d,archivo){const {data,error}=await SB.rpc('alm_retal_importar',{p_filas:d.L.map(x=>({cod:x.cod,ancho:x.a,largo:x.l,n:x.n})),p_archivo:archivo});if(error)throw error;
-  return'Retal cargado: '+data.filas+' filas, '+nf1.format(+data.kg)+' kg. Ya se descontaron de la lámina nueva.'}
+  return'Retal cargado: '+data.piezas+' piezas, '+nf1.format(+data.kg)+' kg. Ya se separaron de la lámina nueva.'}
 };
 ACT.retalImp=()=>{if(!can('mat.import')){toast('Solo Gerencia carga el inventario de retal.','wa');return}
  impModal('retal','Cargar inventario de retal','Excel con Código (de Siesa), Descripción, Ancho, Largo (mm) y Cantidad. El espesor sale de la descripción de la lámina en el maestro. Primero deben estar cargadas las existencias de Siesa.')};
-ACT.retalVer=()=>{const R=RETINI.slice().sort((a,b)=>a.cod.localeCompare(b.cod)||b.kg-a.kg);
- modal(mh('Piezas de retal · inventario inicial',nf0.format(R.reduce((a,r)=>a+r.n,0))+' piezas · '+nf1.format(retIniKg())+' kg')+
-  tbl(['Lámina','Espesor','Ancho × largo (mm)','Piezas','Kg'],R.map(r=>[esc(r.cod),nf1.format(r.e)+' mm',nf0.format(r.a)+' × '+nf0.format(r.l),nf0.format(r.n),nf1.format(r.kg)]),[3,4])+
-  `<p class="mut3" style="font-size:12px;margin-top:10px">Es la foto del día de la carga. El retal disponible de cada lámina cambia con las órdenes de corte (el retal que dejan suma; el que se usa resta).</p><div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'w')};
-Object.assign(ACT_PERM,{retalImp:'mat.import'});
+
+/* ---------- Orden de corte: escoger el retal que entra y anotar el que sobra ---------- */
+function rsLeer(){if(!CRT)return;CRT.rs=CRT.rs||[];for(let i=0;i<CRT.nl;i++){const g=$('#cRg'+i);if(!g)continue;CRT.rs[i]={A:$('#cRA'+i).value,B:$('#cRB'+i).value,g:g.value}}}
+function roLeer(){if(!CRT)return;const R=[];for(let i=0;i<(CRT.no||0);i++){const c=$('#cRoC'+i);if(!c)continue;R.push({cod:c.value,a:$('#cRoA'+i).value,l:$('#cRoL'+i).value,n:$('#cRoN'+i).value})}CRT.ro=R}
+{const _dl=drawLam;drawLam=function(){if(CRT&&!CRT.rsSkip)rsLeer();if(CRT)CRT.rsSkip=false;_dl();CRT.rs=CRT.rs||[];
+ for(let i=0;i<CRT.nl;i++){const row=$('#cLam'+i);if(!row)continue;const s=CRT.rs[i]||{};
+  row.parentNode.insertAdjacentHTML('afterend',`<div class="rlf rsr" id="cRs${i}" style="display:none"><input class="inp" id="cRA${i}" type="number" min="0" placeholder="Ancho mín. mm" value="${esc(s.A||'')}"><input class="inp" id="cRB${i}" type="number" min="0" placeholder="Largo mín. mm" value="${esc(s.B||'')}"><select class="sel" id="cRg${i}" data-sel="${esc(s.g||'')}"></select><span class="sub" id="cRt${i}"></span></div>`)}
+ rsPintar(true)}}
+function rsUsoOtros(k,i){let u=0;for(let j=0;j<CRT.nl;j++){if(j===i)continue;const o=$('#cOrig'+j),g=$('#cRg'+j);if(o&&g&&o.value==='Retal'&&g.value===k)u+=Math.max(1,Math.round(+$('#cLn'+j).value||1))}return u}
+function rsPintar(forzar){if(!CRT)return;
+ for(let i=0;i<CRT.nl;i++){const box=$('#cRs'+i);if(!box)continue;const ret=$('#cOrig'+i).value==='Retal';box.style.display=ret?'':'none';if(!ret)continue;
+  const cod=$('#cLam'+i).value,A=$('#cRA'+i).value,B=$('#cRB'+i).value,sel=$('#cRg'+i);
+  const G=retGr(cod).filter(g=>cabe(g,A,B)).sort((a,b)=>a.a*a.l-b.a*b.l);const sig=cod+'|'+A+'|'+B+'|'+G.map(g=>g.k+g.n).join();
+  if(forzar||sel.dataset.sig!==sig){const cur=sel.value||sel.dataset.sel||'';sel.dataset.sig=sig;
+   sel.innerHTML=G.length?`<option value="">Escoge el retal (${G.length} medida${G.length>1?'s':''})…</option>`+G.map(g=>`<option value="${esc(g.k)}" ${g.k===cur?'selected':''}>${medTxt(g.a,g.l)} · ${nf0.format(g.n)} disp. · ${nf1.format(g.kgU)} kg c/u</option>`).join(''):`<option value="">${retGr(cod).length?'Ningún retal de '+esc(cod)+' alcanza esas medidas':'No hay retal de '+esc(cod)}</option>`;sel.dataset.sel=''}
+  const g=G.find(x=>x.k===sel.value),n=Math.max(1,Math.round(+$('#cLn'+i).value||1)),kg=$('#cLk'+i);
+  if(g&&(!kg.value||kg.dataset.auto==='1')){kg.value=(g.kgU*n).toFixed(1);kg.dataset.auto='1'}
+  const otros=g?rsUsoOtros(g.k,i):0;
+  $('#cRt'+i).innerHTML=g?(n+otros>g.n?`<b class="dn">Solo hay ${g.n} pieza${g.n>1?'s':''} de ${medTxt(g.a,g.l)}${otros?' (otra línea ya usa '+otros+')':''}.</b>`:`Retal de ${medTxt(g.a,g.l)} · teórico ${nf1.format(g.kgU*n)} kg. Pésalo en la báscula y corrige los kg si hace falta.`):'Escribe el ancho y el largo mínimos que necesitas y escoge la pieza: salen primero las más pequeñas que alcanzan.'}}
+function roPintar(){if(!CRT||!$('#cRoL'))return;const cods=[...new Set(lamForm().map(l=>l.cod))];
+ $('#cRoL').innerHTML=(CRT.ro||[]).map((r,i)=>`<div class="rlf ror"><select class="sel" id="cRoC${i}">${cods.map(c=>`<option value="${esc(c)}" ${c===r.cod?'selected':''}>${esc(c)} · ${esc(M(c).desc.slice(0,30))}</option>`).join('')}</select><input class="inp" id="cRoA${i}" type="number" min="1" placeholder="Ancho mm" value="${esc(r.a||'')}"><input class="inp" id="cRoL${i}" type="number" min="1" placeholder="Largo mm" value="${esc(r.l||'')}"><input class="inp" id="cRoN${i}" type="number" min="1" step="1" placeholder="Cant." value="${esc(r.n||'1')}"><span class="sub" id="cRoT${i}"></span><button class="ib" data-act="cDelRo" data-v="${i}" aria-label="Quitar retal">${icon('trash',14)}</button></div>`).join('');CRT.no=(CRT.ro||[]).length;roCalc()}
+function roCalc(){if(!CRT||!$('#cRoInfo'))return;let th=0;const cods=[...new Set(lamForm().map(l=>l.cod))];
+ for(let i=0;i<(CRT.no||0);i++){const c=$('#cRoC'+i);if(!c)continue;
+  if(c.dataset.sig!==cods.join()){const v=c.value;c.innerHTML=cods.map(x=>`<option value="${esc(x)}" ${x===v?'selected':''}>${esc(x)} · ${esc(M(x).desc.slice(0,30))}</option>`).join('');c.dataset.sig=cods.join()}
+  const e=espMM(M(c.value).desc),a=+$('#cRoA'+i).value||0,l=+$('#cRoL'+i).value||0,n=Math.round(+$('#cRoN'+i).value||0);const k=a&&l&&n&&e>0?a*l*e*DENS/1e6*n:0;th+=k;$('#cRoT'+i).textContent=k?'teórico '+nf1.format(k)+' kg':(e>0?nf1.format(e)+' mm':'')}
+ const ini=lamForm().reduce((a,l)=>a+l.kg,0);let pz=0;for(let i=0;i<CRT.n;i++){const k=$('#cpk'+i);if(k)pz+=+k.value||0}const rt=ini-pz-(+$('#cChat').value||0);
+ const box=$('#cRoInfo');
+ if(!ini){box.innerHTML='';return}
+ if(rt>1&&!(CRT.no>0))box.innerHTML=`<b class="dn">Quedan ${nf1.format(rt)} kg de retal: agrega el ancho, el largo y la cantidad de cada retal que sobró.</b> Si no sirve, súmalo a la chatarra.`;
+ else if(rt<=1&&CRT.no>0)box.innerHTML=`<b class="dn">Con estos pesos no queda retal (${nf1.format(Math.max(rt,0))} kg).</b> Quita las filas de retal o revisa la báscula.`;
+ else if(rt<=1)box.innerHTML=rt>0?`Quedan ${nf1.format(rt)} kg: con 1 kg o menos se toma como consumido y no se anota retal.`:'';
+ else{const d=th?Math.abs(rt-th)/th:0;box.innerHTML=`Retal de báscula: <b>${nf1.format(rt)} kg</b> · medidas que escribiste: teórico <b>${nf1.format(th)} kg</b>. Los kg de báscula se reparten entre las piezas según su peso teórico.${th&&d>.25?` <b class="dn">La diferencia es de ${pct(d)}: revisa las medidas o la báscula.</b>`:''}`}}
+{const _cc=calcCorte;calcCorte=function(){_cc.apply(this,arguments);try{rsPintar(false);roCalc()}catch(e){console.error(e)}}}
+{const _nc=newCorte;newCorte=function(){_nc.apply(this,arguments);if(!CRT||!$('#cRet'))return;CRT.ro=[];CRT.no=0;
+ const two=$('#cRet').closest('.two');
+ two.insertAdjacentHTML('afterend',`<div class="lb" style="margin:14px 0 6px">Retal que sobra · ancho, largo y cantidad</div><div class="sub" style="margin-bottom:6px">Obligatorio si el retal pasa de 1 kg. Los kg salen de la báscula y se reparten entre las piezas según su peso teórico. Cada pieza entra al inventario de retal con sus medidas.</div><div id="cRoL"></div><button class="btn ghost sm" data-act="cAddRo">${icon('plus',14)}Agregar retal que sobra</button><div class="sub" id="cRoInfo" style="margin-top:8px;line-height:1.55"></div>`);
+ roPintar();calcCorte()};ACT.newCorte=newCorte}
+ACT.cAddRo=()=>{roLeer();const c=lamForm()[0];CRT.ro.push({cod:c?c.cod:'',a:'',l:'',n:'1'});roPintar();calcCorte()};
+ACT.cDelRo=v=>{roLeer();CRT.ro.splice(+v,1);roPintar();calcCorte()};
+{const _dd=ACT.cDelLam;ACT.cDelLam=v=>{rsLeer();CRT.rs.splice(+v,1);CRT.rsSkip=true;_dd(v);rsPintar(true);roCalc()}}
+document.addEventListener('input',e=>{const t=e.target;if(t&&/^cLk\d+$/.test(t.id))t.dataset.auto='0'},true);
+
+ACT.saveCorte=async(v,el)=>{
+ const LM=lamForm(),ini=LM.reduce((a,l)=>a+l.kg,0),ch=+$('#cChat').value||0;const piezas=[];
+ if(LM.some(l=>!l.kg)){toast('Escribe los kg de báscula de cada lámina.','er');return}
+ for(let i=0;i<CRT.n;i++){const c=$('#cpc'+i).value.trim().toUpperCase();if(c)piezas.push({cod:c,n:+$('#cpn'+i).value||1,kg:+$('#cpk'+i).value||0,d:$('#cpd'+i).value||'STOCK'})}
+ if(!ini||!piezas.length){toast('Escribe el peso inicial y al menos una pieza.','er');return}
+ const pz=piezas.reduce((a,p)=>a+p.kg,0),rt=+(ini-pz-ch).toFixed(2);if(rt<-1e-6){toast('Las piezas y la chatarra pesan más que la lámina. Revisa la báscula.','er');return}
+ const ds=[...new Set(piezas.map(p=>p.d))];if(ds.length>1&&piezas.some(p=>!(p.kg>0))){toast('Hay piezas para varios destinos: escribe los kg pesados de cada pieza para repartir la lámina.','er');return}
+ const noCat=[...new Set(piezas.filter(p=>!MI[p.cod]||!MI[p.cod].cl).map(p=>p.cod))];if(noCat.length){toast('Estas piezas no existen como piezas de corte en el catálogo: '+esc(noCat.join(', '))+'. Créalas en «Nuevo material» (código CL…) o cárgalas con el BOM.','er');return}
+ // Retal que entra
+ const uso={};
+ for(let i=0;i<LM.length;i++){const l=LM[i];if(l.orig!=='Retal')continue;const k=($('#cRg'+i)||{}).value||'';if(!k){toast('Escoge las medidas del retal de '+esc(l.cod)+' que entra al corte.','er');return}
+  const [,a,b]=k.split('|');l.ra=+a;l.rl=+b;uso[k]=(uso[k]||0)+l.n}
+ for(const [k,n] of Object.entries(uso)){const g=retGr().find(x=>x.k===k);if(!g||g.n<n){toast('No hay '+n+' piezas de retal de '+esc(k.split('|')[0])+' de '+medTxt(+k.split('|')[1],+k.split('|')[2])+'.','er');return}}
+ // Retal que sobra
+ roLeer();const ro=(CRT.ro||[]).map(r=>({cod:r.cod,a:+r.a||0,l:+r.l||0,n:Math.round(+r.n||0)}));
+ if(ro.some(r=>!r.a||!r.l||r.n<1)){toast('Completa el ancho, el largo y la cantidad de cada retal que sobra (o quita la fila).','er');return}
+ if(rt>1&&!ro.length){toast('Quedan '+nf1.format(rt)+' kg de retal: agrega sus medidas en «Retal que sobra». Si no sirve, súmalo a la chatarra.','er');return}
+ if(rt<=1&&ro.length){toast('Con estos pesos no queda retal: quita las filas de «Retal que sobra» o revisa la báscula.','er');return}
+ const pf=planForm();const plan=(pf.pl||pf.ne||pf.pz.length)?{e:pf.e,pl:pf.pl,ne:pf.ne,corte:pf.corte,pz:pf.pz.map(p=>[p.cod,p.a,p.b,p.q])}:null;
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_corte_registrar',{p:{ot:$('#cOt').value.trim(),chat:ch,plan,lams:LM.map(l=>Object.assign({cod:l.cod,orig:l.orig,n:l.n,kg:l.kg},l.orig==='Retal'?{ra:l.ra,rl:l.rl}:{})),piezas,retales:ro}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();
+  toast(`${data.id}: ${nf1.format(+data.consumido)} kg de lámina → ${(data.destinos||[]).map(x=>dLbl(x.d)+' '+nf1.format(+x.cons)+' kg').join(' · ')}. ${+data.retal>0?`Retal: ${ro.reduce((a,r)=>a+r.n,0)} pieza${ro.reduce((a,r)=>a+r.n,0)>1?'s':''} (${nf1.format(+data.retal)} kg) al inventario de retal`:'Sin retal'}; ${nf1.format(ch)} kg de chatarra al acopio.`,'ok')})};
+Object.assign(ACT_PERM,{retalImp:'mat.import',retChat:'corte.new',retChatGo:'corte.new'});
 
 </script>
 </body>
