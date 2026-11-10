@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.3 · bloque 4';
+const VERSION='4.4 · bloque 5';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes, correcciones del BOM, fotos de la entrega, recibido de producción, EPP con firma y sus costos, y kits listos. Todavía no se guardan (bloques 5 y 6 del plan): conteos, cierre mensual, liberaciones de calidad y modelos de tanque.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes, correcciones del BOM, fotos de la entrega, recibido de producción, EPP con firma y sus costos, kits listos, conteos cíclicos, ajustes de inventario en proceso e inventario mensual con su cierre. Todavía no se guardan (bloque 6 del plan): liberaciones de calidad con firmas y certificado, y modelos de tanque.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4725,7 +4725,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -5227,6 +5227,102 @@ new MutationObserver(()=>{if(!U.user||U.kiosk)return;
 
 /* ---------- Permisos visibles (decisión 34) ---------- */
 Object.assign(ACT_PERM,{saveEpp:'epp.ent',kitOk:'kit.prep',eppAnularGo:'epp.anular'});
+
+/* ================= Bloque 5 · Inventario (v4.4) =================
+   - Conteo cíclico diario a ciegas: la base compara con la existencia del momento; dentro de
+     tolerancia se ajusta sola, fuera de tolerancia la aprueba Gerencia o pide reconteo.
+   - Ajuste de inventario en proceso: solo Gerencia (decisión 32). No toca bodegas.
+   - Inventario mensual consolidado (físico, Siesa, APPOLO) y cierre del mes.
+   La interfaz es la de la maqueta; cambia la capa de datos. */
+
+/* ---------- Leer conteos, ajustes e inventarios mensuales ---------- */
+const INV_PESADO={};   // siesa y appolo de los meses ya leídos
+async function invPesado(id){const {data,error}=await SB.from('alm_inventarios').select('id,siesa,appolo').eq('id',id);if(error)throw error;
+ const r=(data||[]).find(x=>x.id===id);INV_PESADO[id]=r?{siesa:r.siesa||null,appolo:r.appolo||null}:{siesa:null,appolo:null};return INV_PESADO[id]}
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [co,li,aj,iv]=await Promise.all([
+  leerTodo('alm_conteos','id,fecha,hora,n,ok,minutos,conto','id'),
+  leerTodo('alm_conteo_lineas','id,conteo,cod,bodega,clase,sistema,contado,dif,estado,resolvio','id'),
+  leerTodo('alm_ajustes_wip','id,fecha,hora,tipo,proyecto,op,cod,um,ubicacion,cantidad,antes,despues,motivo,otro,observaciones,costo_unit,responsable,compensa,compensado_por','id'),
+  leerTodo('alm_inventarios','id,mes,fecha_corte,estado,creado_nombre,fisico,cierre,creado_en','id')]);
+ // Ajuste WIP: en la base va con signo; la maqueta usa cantidad positiva y el tipo aparte
+ S.movs.forEach(m=>{if(m.t==='Ajuste WIP'){m.aj=m.q<0?'-':'+';m.q=Math.abs(m.q);m.bod=''}});
+ // Conteos
+ const L1={};co.forEach(c=>L1[c.id]=c);
+ const hoyC=co.find(c=>c.fecha===HOY);
+ S.conteos={hist:co.slice().sort((a,b)=>b.id.localeCompare(a.id)).map(c=>({id:c.id,f:c.fecha,fam:'Lista del día',n:+c.n,ok:+c.ok,min:+c.minutos||Math.round(c.n*1.5)})),
+  pend:li.filter(l=>l.estado==='Por aprobar').map(l=>({lid:l.id,cod:l.cod,b:l.bodega,sist:+l.sistema,cont:+l.contado,f:(L1[l.conteo]||{}).fecha||'',quien:(L1[l.conteo]||{}).conto||''})),
+  ult:{},rec:[]};
+ const last={};li.forEach(l=>{last[l.cod+'|'+l.bodega]=l});
+ Object.values(last).forEach(l=>{const c=L1[l.conteo]||{};S.conteos.ult[l.cod+'|'+l.bodega]={f:c.fecha,cont:+l.contado,sist:+l.sistema};if(l.estado==='Reconteo')S.conteos.rec.push({cod:l.cod,b:l.bodega})});
+ if(hoyC)S.conteos.hoy={f:HOY,hecho:true,items:li.filter(l=>l.conteo===hoyC.id).map(l=>({cod:l.cod,b:l.bodega,ub:((MI[l.cod]||{}).ub||{})[l.bodega]||''}))};
+ // Ajustes de inventario en proceso
+ S.ajw=aj.map(a=>({id:a.id,f:a.fecha,h:a.hora,tipo:a.tipo,proy:a.proyecto,op:a.op,cod:a.cod,desc:(MI[a.cod]||{}).desc||a.cod,um:a.um,ub:a.ubicacion,q:+a.cantidad,ant:+a.antes,post:+a.despues,
+  mot:a.motivo,otro:a.otro,obs:a.observaciones,u:a.responsable,comp:a.compensa||'',compBy:a.compensado_por||'',cu:+a.costo_unit||null})).sort((a,b)=>b.id.localeCompare(a.id));
+ // Inventarios mensuales: lo pesado (Siesa y APPOLO) se lee del mes abierto y del último; los demás al abrirlos
+ const ord=iv.slice().sort((a,b)=>a.mes.localeCompare(b.mes));
+ const leer=ord.filter((x,i)=>x.estado==='Abierto'||i===ord.length-1).map(x=>x.id);
+ await Promise.all(leer.map(id=>invPesado(id).catch(()=>null)));
+ S.invm=ord.map(x=>{const h=INV_PESADO[x.id];return{id:x.id,mes:x.mes,f:x.fecha_corte,estado:x.estado,creado:{u:x.creado_nombre,f:String(x.creado_en||'').slice(0,10)},
+  siesa:h?h.siesa:null,appolo:h?h.appolo:null,fis:x.fisico||{},cierre:x.cierre||null,_pend:!h}});
+}}
+
+/* ---------- Conteo cíclico ---------- */
+{const _lh=listaHoy;listaHoy=function(){const it=_lh.apply(this,arguments);const H=S.conteos.hoy;
+ if(H&&!H.hecho&&!H._rec){H._rec=true;const ya=new Set(it.map(x=>x.cod+'|'+x.b));
+  const R=(S.conteos.rec||[]).filter(r=>!ya.has(r.cod+'|'+r.b)&&MI[r.cod]).map(r=>({cod:r.cod,b:r.b,ub:(MI[r.cod].ub||{})[r.b]||'',rec:true}));
+  H.items=R.concat(it.filter(x=>['AL001','MP001'].includes(x.b)));return H.items}
+ return it}}
+ACT.endCnt=async(v,el)=>{const it=listaHoy();const vals=it.map((x,i)=>($('#cq'+i)||{value:''}).value);
+ if(vals.some(x=>x==='')){toast('Faltan referencias por contar. Si no hay nada, escribe 0.','er');return}
+ const items=it.map((x,i)=>({cod:x.cod,bod:x.b,q:parseFloat(vals[i])}));
+ if(items.some(x=>isNaN(x.q)||x.q<0)){toast('Revisa las cantidades: deben ser números de 0 en adelante.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_conteo_registrar',{p:{minutos:Math.round(items.length*1.5),items}});if(error)throw error;
+  await cargarDatos();rerender();toast(`Conteo ${data.id}: ${data.ok} de ${data.n} correctas (${pct(data.n?data.ok/data.n:0)}).${data.pend?' '+data.pend+' diferencia(s) quedan por aprobar.':''}`,data.pend?'wa':'ok')})};
+async function cntResolver(i,ok,el){const p=S.conteos.pend[+i];if(!p)return;
+ await sbAccion(el,'…',async()=>{const {error}=await SB.rpc('alm_conteo_resolver',{p_linea:p.lid,p_ok:ok});if(error)throw error;await cargarDatos();rerender();
+  toast(ok?'Ajuste aprobado y registrado en el kárdex.':'Se pidió reconteo de '+esc(p.cod)+'. Saldrá en la lista de mañana.',ok?'ok':'i')})}
+ACT.aprAj=(v,el)=>cntResolver(v,true,el);
+ACT.recAj=(v,el)=>cntResolver(v,false,el);
+
+/* ---------- Ajuste de inventario en proceso (solo Gerencia) ---------- */
+ACT.ajGo=async(v,el)=>{if(!AJF)return;const err=ajValida();if(err){toast(err,'er');ajForm();return}const F=AJF;
+ await sbAccion(el||$('#ajGoBtn'),'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_ajwip_registrar',{p:{tok:F.tok,tipo:F.tipo,proy:F.proy,op:F.op,cod:F.cod,ub:F.ub,q:numv(F.q),mot:F.mot,otro:F.otro,obs:F.obs,comp:F.comp||''}});if(error)throw error;
+  const m=MI[F.cod]||{um:''};AJF=null;await cargarDatos();closeModal();rerender();
+  toast(`${data.id} registrado: ${esc(F.cod)} en ${esc(F.proy)} pasó de ${qf(+data.antes)} a ${qf(+data.despues)} ${m.um}.`,'ok')})};
+
+/* ---------- Inventario mensual consolidado ---------- */
+{const _vi=VIEWS.invc;VIEWS.invc=function(){const I=INV();
+ if(I&&I._pend&&!INV_PESADO[I.id]){invPesado(I.id).then(h=>{I.siesa=h.siesa;I.appolo=h.appolo;I._pend=false;rerender()}).catch(e=>toast('No se pudo leer el inventario: '+sbErr(e),'er'));
+  return`<div class="card"><p class="mut">Cargando el inventario de ${mesTxt(I.mes)}…</p></div>`}
+ if(I&&I._pend&&INV_PESADO[I.id]){I.siesa=INV_PESADO[I.id].siesa;I.appolo=INV_PESADO[I.id].appolo;I._pend=false}
+ return _vi.apply(this,arguments)}}
+ACT.invNewGo=async(v,el)=>{const mes=$('#inM').value,f=$('#inF').value;if(!mes||!f){toast('Escoge el mes y la fecha.','er');return}
+ await sbAccion(el,'Creando…',async()=>{const {data,error}=await SB.rpc('alm_inv_crear',{p_mes:mes,p_fecha:f});if(error)throw error;
+  U.f.ivI=data.id;U.tab.invc='arc';await cargarDatos();closeModal();rerender();toast('Inventario de '+mesTxt(mes)+' creado. Carga Siesa y APPOLO.','ok')})};
+ACT.ivSave=async(v,el)=>{const I=INV();if(!I)return;const vals={};
+ $$('[data-iv]').forEach(i=>{if(i.value==='')return;const q=numv(i.value);if(isNaN(q)||q<0)return;const o=I.fis[i.dataset.iv];if(!o||+o.q!==q)vals[i.dataset.iv]=q});
+ if(!Object.keys(vals).length){toast('No hubo cambios.','i');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_inv_fisico',{p_id:I.id,p_vals:vals});if(error)throw error;await cargarDatos();rerender();toast(data.n+' cantidades guardadas.','ok')})};
+ACT.invCloseGo=async(v,el)=>{const I=S.invm.find(x=>x.id===v);if(!I)return;const r=invRes(I);delete r.R;
+ await sbAccion(el,'Cerrando…',async()=>{const {error}=await SB.rpc('alm_inv_cerrar',{p_id:v,p_res:r});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Inventario de '+mesTxt(I.mes)+' cerrado.','ok')})};
+/* Cargas de archivos: se guardan en la base (antes que el lector de la maqueta) */
+document.addEventListener('change',async e=>{const id=e.target&&e.target.id;if(!['ivSi','ivAp','ivUp'].includes(id)||!U.user)return;e.stopImmediatePropagation();
+ const f=e.target.files[0];e.target.value='';if(!f)return;const I=INV();if(!I)return;
+ try{const rows=await readXlsx(f);
+  if(id==='ivSi'){const d=IMPF.mat.parse(rows);if(!d.ok){toast(esc(d.err||'Archivo sin filas'),'er');return}const R={},cu={};d.L.forEach(l=>{R[l.cod+'|'+l.bod]=(R[l.cod+'|'+l.bod]||0)+l.q;if(!isNaN(l.cu)&&l.cu)cu[l.cod]=l.cu});
+   const {error}=await SB.rpc('alm_inv_siesa',{p_id:I.id,p:{file:f.name,rows:R,cu}});if(error)throw error;delete INV_PESADO[I.id];await invPesado(I.id);await cargarDatos();rerender();toast(`Siesa cargado: ${d.L.length} líneas. Las existencias de la app no cambiaron.`,'ok')}
+  if(id==='ivAp'){const i=rows.findIndex(r=>r.some(c=>nrmH(c)==='SALDO DISPONIBLE')&&r.some(c=>nrmH(c)==='CODIGO'));if(i<0){toast('No encontré las columnas «Codigo» y «Saldo Disponible» del informe de APPOLO.','er');return}const h=rows[i].map(nrmH);const c=k=>h.indexOf(k);
+   const L=rows.slice(i+1).filter(r=>r[c('CODIGO')]).map(r=>[String(r[c('CODIGO')]).trim(),String(r[c('NOMBRE')]||'').trim(),r[c('GRUPO')]||'',r[c('UNIDAD MANEJO')]||'',r[c('ORIGEN')]||'',+numv(r[c('SALDO')])||0,+numv(r[c('SALDO DISPONIBLE')])||0,+numv(r[c('VALOR UNITARIO')])||0,xd(r[c('FECHA ULTIMO MOV.')]),r[c('ACTIVO')]||'']);
+   const {error}=await SB.rpc('alm_inv_appolo',{p_id:I.id,p:{file:f.name,rows:L}});if(error)throw error;delete INV_PESADO[I.id];await invPesado(I.id);await cargarDatos();rerender();toast(`APPOLO cargado: ${L.length} productos (${L.filter(r=>APG[r[2]]).length} en el cruce).`,'ok')}
+  if(id==='ivUp'){const h=hdr(rows,['CODIGO','CONTADA']);if(!h){toast('La planilla debe tener «Código», «Bodega» y «Cantidad contada».','er');return}const vals={};
+   rows.slice(h.i+1).forEach(r=>{const cod=String(r[h.col('CODIGO')]||'').trim(),b=String(r[h.col('BODEGA')]||'').trim().toUpperCase(),q=numv(r[h.col('CONTADA')]);if(!cod||!['AL001','MP001','CON01'].includes(b)||isNaN(q)||q<0)return;vals[cod+'|'+b]=q});
+   if(!Object.keys(vals).length){toast('La planilla no trae cantidades.','er');return}
+   const {data,error}=await SB.rpc('alm_inv_fisico',{p_id:I.id,p_vals:vals});if(error)throw error;await cargarDatos();rerender();toast(data.n+' cantidades cargadas desde Excel.','ok')}
+ }catch(x){console.error(x);toast('No se guardó: '+sbErr(x),'er')}},true);
+
+/* ---------- Permisos visibles (decisión 34) ---------- */
+Object.assign(ACT_PERM,{ajNuevo:'wip.ajustar',ajComp:'wip.ajustar',ajGo:'wip.ajustar',invClose:'inv.cerrar',invCloseGo:'inv.cerrar'});
 
 </script>
 </body>
