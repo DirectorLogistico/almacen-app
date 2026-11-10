@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.4 · bloque 5';
+const VERSION='4.5 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes, correcciones del BOM, fotos de la entrega, recibido de producción, EPP con firma y sus costos, kits listos, conteos cíclicos, ajustes de inventario en proceso e inventario mensual con su cierre. Todavía no se guardan (bloque 6 del plan): liberaciones de calidad con firmas y certificado, y modelos de tanque.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes, correcciones del BOM, fotos de la entrega, recibido de producción, EPP con firma y sus costos, kits listos, conteos cíclicos, ajustes de inventario en proceso, inventario mensual con su cierre, firmas, liberaciones de calidad con certificado y etapas del tanque. Solo «Modelos y kits» queda para después del piloto.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4725,7 +4725,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -5323,6 +5323,78 @@ document.addEventListener('change',async e=>{const id=e.target&&e.target.id;if(!
 
 /* ---------- Permisos visibles (decisión 34) ---------- */
 Object.assign(ACT_PERM,{ajNuevo:'wip.ajustar',ajComp:'wip.ajustar',ajGo:'wip.ajustar',invClose:'inv.cerrar',invCloseGo:'inv.cerrar'});
+
+/* ================= Bloque 6 · Calidad y salida en vivo (v4.5) =================
+   - Firma de cada usuario (solo la ve y la usa su dueño).
+   - Liberaciones de calidad: solicitud, certificado con 2 firmas (las pone la base de datos),
+     certificado escaneado opcional (archivador privado alm-docs) y PDF.
+   - Etapas del tanque: lavado → listo → entregado al cliente (cierra el proyecto); deshacer (Gerencia).
+   - Limpieza de fotos (Gerencia). La interfaz es la de la maqueta. */
+
+/* ---------- Leer liberaciones, mi firma y etapas ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [lb,fi,pr]=await Promise.all([
+  leerTodo('alm_liberaciones','id,proyecto,etapa,tipo,msg,estado,sol,insp,cert,adj,hist,creado_en','id'),
+  leerTodo('alm_firmas','usuario,email,nombre,cargo,img,fecha,hora','usuario'),
+  leerTodo('alm_proyectos','id,fase,fase_log,vin','id')]);
+ S.lib=lb.slice().sort((a,b)=>String(a.creado_en).localeCompare(String(b.creado_en))).map(l=>({id:l.id,proy:l.proyecto,etapa:l.etapa,tipo:l.tipo,msg:l.msg,estado:l.estado,
+  sol:l.sol||{},insp:l.insp||{},cert:l.cert||undefined,adj:l.adj?l.adj.nombre:null,adjRuta:l.adj?l.adj.ruta:null,hist:l.hist||[]}));
+ S.firmas={};fi.forEach(f=>{S.firmas[f.email]={img:f.img,f:f.fecha,h:f.hora,cargo:f.cargo,nombre:f.nombre}});
+ const F={};pr.forEach(p=>F[p.id]=p);
+ S.proys.forEach(p=>{const x=F[p.id];if(!x)return;p.fase=x.fase||'';p.faseLog=x.fase_log||[];if(x.vin)p.vin=x.vin;if(typeof syncEtapa==='function')syncEtapa(p)});
+}}
+
+/* ---------- Mi firma ---------- */
+ACT.fpSave=async(v,el)=>{const c=$('#fpad');if(!c||!(+c.dataset.n>3)){toast('Dibuja tu firma en el recuadro.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_firma_guardar',{p_img:c.toDataURL('image/png'),p_cargo:($('#fpC')||{value:''}).value.trim()});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast('Firma registrada. Ya puedes firmar con un botón.','ok')})};
+ACT.firmaDel=async(v,el)=>{await sbAccion(el,'…',async()=>{const {error}=await SB.rpc('alm_firma_quitar');if(error)throw error;await cargarDatos();rerender();toast('Firma quitada.','ok')})};
+
+/* ---------- Liberaciones de calidad ---------- */
+ACT.libGo=async(pid,el)=>{const g=x=>($('#'+x)||{}).value||'';if(!g('lbI')){toast('Escoge el inspector.','er');return}
+ await sbAccion(el,'Enviando…',async()=>{const {data,error}=await SB.rpc('alm_lib_solicitar',{p_proy:pid,p_tipo:g('lbT'),p_insp:g('lbI'),p_msg:g('lbM').trim()});if(error)throw error;
+  await cargarDatos();closeModal();rerender();libVer(data.id);toast(`${data.id} enviada a Calidad.`,'ok')})};
+ACT.libAskGo=async(v,el)=>{const [id,k]=v.split('|');const m=(($('#laM')||{}).value||'').trim();
+ if(k!=='reas'&&m.length<4){toast(k==='no'?'Escribe el hallazgo.':'Escribe el motivo.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_lib_accion',{p_id:id,p_k:k,p_motivo:m,p_insp:k==='reas'?($('#laI')||{}).value:null});if(error)throw error;
+  await cargarDatos();rerender();libVer(id);toast(k==='reas'?'Inspector reasignado.':k==='no'?'Registrado: no se libera. El tanque sigue en prueba.':'Solicitud anulada.','ok')})};
+ACT.certSave=async(id,el)=>{const L=S.lib.find(x=>x.id===id);if(!L)return;if(!firmaDe(U.user.email)){toast('Primero registra tu firma en Ajustes → Mi firma.','er');return}
+ if(L.estado===LIBS.cert){
+  await sbAccion(el,'Aprobando…',async()=>{const {data,error}=await SB.rpc('alm_lib_aprobar',{p_id:id,p_ok:true});if(error)throw error;
+   await cargarDatos();rerender();libVer(id);toast(data.estado===LIBS.ok?'Prueba liberada: el tanque pasa a lavado.':'Certificado aprobado con resultado rechazado: el tanque sigue en prueba.',data.estado===LIBS.ok?'ok':'wa')});return}
+ const g=x=>($('#'+x)||{}).value||'';const C={tipo:g('cTy'),eq:g('cEq'),se:g('cSe'),vin:g('cVin').trim(),cu:g('cCu'),ma:g('cMa'),dc:g('cDc'),mc:g('cMc'),wp:g('cWp'),tp:g('cTp'),tt:g('cTt'),rg:g('cRg'),ti:g('cTi'),res:g('cRs'),pl:g('cPl'),ob:g('cOb')};
+ if(!C.tp||!C.ti||!C.tt){toast('Faltan la presión de prueba, la temperatura o el tiempo.','er');return}
+ await sbAccion(el,'Firmando…',async()=>{
+  if(typeof CERTADJ!=='undefined'&&CERTADJ){el&&(el.textContent='Subiendo el escaneado…');const b=await (await fetch(CERTADJ.data)).blob();
+   const nom=String(CERTADJ.name||'certificado').normalize('NFD').replace(/[^A-Za-z0-9_.-]/g,'_').slice(-60);const ruta=`cert/${id}/${Date.now()}_${nom}`;
+   const up=await SB.storage.from('alm-docs').upload(ruta,b,{contentType:b.type||'application/pdf',upsert:false});if(up.error)throw up.error;C.adj={nombre:CERTADJ.name,ruta};CERTADJ=null}
+  const {error}=await SB.rpc('alm_lib_cert',{p_id:id,p:C});if(error)throw error;
+  await cargarDatos();rerender();libVer(id);toast('Certificado firmado. Falta la firma de quien aprueba.','ok')})};
+ACT.certDev=async(id,el)=>{await sbAccion(el,'…',async()=>{const {error}=await SB.rpc('alm_lib_aprobar',{p_id:id,p_ok:false});if(error)throw error;await cargarDatos();rerender();libVer(id);toast('Certificado devuelto al inspector.','i')})};
+ACT.certAdjVer=async id=>{const L=S.lib.find(x=>x.id===id);if(!L||!L.adjRuta){toast('Esta solicitud no tiene escaneado.','wa');return}
+ try{const {data,error}=await SB.storage.from('alm-docs').createSignedUrls([L.adjRuta],600);if(error)throw error;const u=data&&data[0]&&data[0].signedUrl;if(!u)throw new Error('sin enlace');
+  const b=await (await fetch(u)).blob();await saveFile(L.adj||('Certificado_'+id),b)}catch(e){toast('No se pudo abrir el escaneado: '+sbErr(e),'er')}};
+
+/* ---------- Etapas del tanque ---------- */
+ACT.faseGo=async(v,el)=>{const [pid,id]=v.split('|');const g=x=>{const e=document.getElementById(x);return e?e.value.trim():''};
+ if(id==='prueba'){closeModal();libNew(pid);return}
+ if(id==='rechazo'){toast('El resultado de la prueba lo registra Calidad en Liberaciones de calidad.','i');return}
+ const nota=g('faN'),doc=g('faD');
+ if(id==='deshacer'){if(nota.length<4){toast('Escribe el motivo.','er');return}
+  await sbAccion(el,'…',async()=>{const {error}=await SB.rpc('alm_fase_deshacer',{p_proy:pid,p_motivo:nota});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Paso deshecho; queda el rastro.','ok')});return}
+ if(id==='entregado'&&!doc){toast('Escribe la remisión o el acta de entrega.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_fase_avanzar',{p_proy:pid,p_fase:id,p_doc:doc,p_nota:nota,p_fecha:g('faF')||null,p_hora:g('faH')||null});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${pid}: ${id==='listo'?'listo para entregar':'entregado al cliente; el proyecto quedó cerrado'}.`,'ok')})};
+
+/* ---------- Limpieza de fotos (Gerencia) ---------- */
+async function fotosBorrar(L,el){const ids=L.map(f=>+String(f.id).replace(/^F/,'')).filter(x=>x>0);if(!ids.length){toast('No hay fotos con ese filtro.','i');return}
+ await sbAccion(el,'Borrando…',async()=>{const {data,error}=await SB.rpc('alm_fotos_borrar',{p_ids:ids});if(error)throw error;
+  let aviso='';const R=data.rutas||[];for(let i=0;i<R.length;i+=100){const r=await SB.storage.from('alm-fotos').remove(R.slice(i,i+100));if(r&&r.error)aviso=sbErr(r.error)}
+  await cargarDatos();closeModal();rerender();toast(`${data.n} foto(s) eliminadas. Las entregas, cantidades y costos siguen completos.`,'ok');
+  if(aviso)toast('Algunas fotos quedaron en el archivador: '+esc(aviso),'wa')})}
+ACT.fotoCleanGo=(v,el)=>fotosBorrar(fotoFil(),el);
+ACT.delFotos=(v,el)=>fotosBorrar(S.fotos.filter(f=>f.proy===v),el);
+Object.assign(ACT_PERM,{fotoClean:'fotos.del',fotoCleanGo:'fotos.del',delFotos:'fotos.del'});
 
 </script>
 </body>
