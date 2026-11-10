@@ -1014,7 +1014,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.2 · bloque 3';
+const VERSION='4.3 · bloque 4';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4033,7 +4033,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 /* Retoques visuales después de cada pantalla: aviso de fase y descargas desactivadas */
 let sbPend=false;
 function sbRetoques(){sbPend=false;
- const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes y correcciones del BOM. Todavía no se guardan (bloques 4 a 6 del plan): fotos de la entrega, kits, EPP, conteos y liberaciones.`}
+ const b=$('.ejbar');if(b&&!b.dataset.sb){b.dataset.sb='1';b.innerHTML=`<b>Versión ${VERSION}.</b> Se guardan en la base de datos: Siesa, materiales, piezas CL, técnicos, proyectos y BOM, OT, órdenes de compra, entradas, calidad del material, corte láser, chatarra, solicitudes, entregas, devoluciones, daños o pérdidas, excedentes, correcciones del BOM, fotos de la entrega, recibido de producción, EPP con firma y sus costos, y kits listos. Todavía no se guardan (bloques 5 y 6 del plan): conteos, cierre mensual, liberaciones de calidad y modelos de tanque.`}
  const pf=$('.side .prof');if(pf&&!pf.dataset.act){pf.dataset.act='perfilMenu';pf.setAttribute('role','button');pf.setAttribute('tabindex','0');pf.setAttribute('aria-label','Opciones de tu cuenta')}
  if(!pf){const pp=$('#perfPop');if(pp)pp.remove()}
  if(U.user)$$('[data-act]').forEach(el=>{const a=el.dataset.act;if(ACT_DESCARGA.includes(a)&&!puedeDescargar(a)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Solo Gerencia y el Auxiliar descargan informes')}});
@@ -4659,7 +4659,7 @@ function fotoReducir(file){return new Promise((res,rej)=>{const rd=new FileReade
     if(blob&&blob.size<=165*1024)break;if(cal>.5)cal-=.1;else lado=Math.round(lado*.8)}
    blob?res(blob):rej(new Error('No se pudo reducir la foto'))};im.src=rd.result};rd.readAsDataURL(file)})}
 async function fotosSubir(ref,files){const L=[...(files||[])].slice(0,6);let ok=0;const err=[];
- for(let i=0;i<L.length;i++){try{const b=await fotoReducir(L[i]);const ruta=`${/^EA-/.test(ref)?'ea':'fdp'}/${ref}/${Date.now()}_${i+1}.jpg`;
+ for(let i=0;i<L.length;i++){try{const b=await fotoReducir(L[i]);const ruta=`${/^EA-/.test(ref)?'ea':/^SOL-/.test(ref)?'sol':'fdp'}/${ref}/${Date.now()}_${i+1}.jpg`;
   const up=await SB.storage.from('alm-fotos').upload(ruta,b,{contentType:'image/jpeg',upsert:false});if(up.error)throw up.error;
   const {error}=await SB.rpc('alm_foto_registrar',{p_ref:ref,p_ruta:ruta,p_kb:Math.round(b.size/1024)});if(error)throw error;ok++}
   catch(e){console.error(e);err.push(sbErr(e))}}
@@ -4725,7 +4725,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -4840,7 +4840,7 @@ ACT.newMat=()=>newMat();
 ACT.saveEditMat=async(v,el)=>{const m=M(v);const d=$('#emDesc').value.trim();if(!d){toast('La descripción no puede quedar vacía.','er');return}
  const ubs=[];let cambio=false;Object.keys(m.stk).forEach((b,i)=>{const s=$('#emB'+i);if(s&&s.value!==b)cambio=true;ubs.push({bod:b,ub:($('#emU'+i)||{value:''}).value.trim()})});
  if(cambio){toast('El cambio de bodega mueve existencia: se hará con un traslado cuando se active Inventario. Aquí solo cambia la ubicación.','wa');return}
- await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_material_editar',{p:{cod:v,desc:d,fam:$('#emFam').value,vida:($('#emVida')||{value:''}).value,ubs}});if(error)throw error;
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_material_editar',{p:{cod:v,desc:d,fam:$('#emFam').value,vida:($('#emVida')||{value:''}).value,prot:($('#emProt')||{value:''}).value,ubs}});if(error)throw error;
   await cargarDatos();closeModal();rerender();toast(esc(v)+' actualizado.','ok')})};
 
 /* ---------- Mínimos y máximos (Gerencia): se guardan al salir de la casilla ---------- */
@@ -5077,6 +5077,156 @@ new MutationObserver(()=>{const c=$('#chP');if(c&&U.user&&U.user.rol!=='Gerencia
 
 /* ---------- Permisos visibles (decisión 34) ---------- */
 Object.assign(ACT_PERM,{saveCorte:'corte.new',chatVentaSave:'corte.new'});
+
+/* ================= Bloque 4 · Entrega completa (v4.3) =================
+   - Fotos de evidencia en la entrega de solicitudes (archivador privado alm-fotos).
+   - Producción confirma «recibido».
+   - EPP, dotación y herramienta con firma: gasto general (sin proyecto), historial y
+     pestaña «Costos» con filtros por fecha, técnico, tipo de protección y familia.
+   - Surtido: «kit listo» por sección queda guardado. Kit Betts: piezas sueltas (decisión 46).
+   - Modelos y kits: visible, se activa después (botones desactivados). */
+
+const PROT=['Manos','Cabeza','Cara y ojos','Respiratoria','Auditiva','Pies','Cuerpo','Caídas (alturas)','Herramienta','Otro'];
+const FAM_EPP=['EPP','Dotación','Herramienta'];
+function protAuto(m){if(!m)return'Otro';const d=String(m.desc||'').toUpperCase();
+ if(m.fam==='Herramienta')return'Herramienta';if(/GUANTE/.test(d))return'Manos';if(/CASCO|BARBUQUEJO|COFIA/.test(d))return'Cabeza';
+ if(/RESPIRADOR|MASCARILLA|TAPABOCA|FILTRO|CARTUCHO/.test(d))return'Respiratoria';if(/TAPAO[IÍ]DO|TAPA O[IÍ]DO|AUDITIV|OREJERA/.test(d))return'Auditiva';
+ if(/GAFA|MONOGAFA|CARETA|FACIAL|VISOR|LENTE|PANTALLA/.test(d))return'Cara y ojos';if(/BOTA|ZAPATO|CALZADO|POLAINA/.test(d))return'Pies';
+ if(/ARN[EÉ]S|ESLINGA|L[IÍ]NEA DE VIDA|MOSQUET/.test(d))return'Caídas (alturas)';
+ if(/OVEROL|CAMISA|PANTAL[OÓ]N|CHAQUETA|PETO|DELANTAL|MANGA|CAMIBUSO|CHALECO|IMPERMEABLE|DOTACI/.test(d)||m.fam==='Dotación')return'Cuerpo';return'Otro'}
+const protDe=m=>(m&&m.prot)||protAuto(m);
+
+/* ---------- Leer EPP, confirmaciones, kits listos, tipo de protección y fotos ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();
+ const [ep,so,pr,ma]=await Promise.all([
+  leerTodo('alm_epp','id,fecha,hora,tecnico,tecnico_nombre,cod,cantidad,motivo,costo_unit,proxima,entrego,anulado','id'),
+  leerTodo('alm_solicitudes','id,confirmo,confirmado_en','id'),
+  leerTodo('alm_proyectos','id,kits_listos','id'),
+  leerTodo('alm_materiales','cod,proteccion','cod')]);
+ S.epp=ep.filter(e=>!e.anulado).map(e=>({id:e.id,f:e.fecha,h:e.hora,tec:e.tecnico,tecNom:e.tecnico_nombre,cod:e.cod,q:+e.cantidad,mot:e.motivo,firma:true,prox:e.proxima||e.fecha,u:e.entrego,cu:+e.costo_unit||0,ej:false})).sort((a,b)=>a.id.localeCompare(b.id));
+ const C={};so.forEach(s=>{if(s.confirmado_en)C[s.id]=s});S.sols.forEach(s=>{const c=C[s.id];s.conf=!!c;if(c){s.confPor=c.confirmo;s.confEn=c.confirmado_en}});
+ const K={};pr.forEach(p=>K[p.id]=p.kits_listos||{});S.proys.forEach(p=>{p.kits=K[p.id]||{}});
+ ma.forEach(x=>{const m=MI[x.cod];if(m){if(x.proteccion)m.prot=x.proteccion;else delete m.prot}});
+ // Fotos (las lee el módulo de devoluciones en FOTOS): las ve toda la app
+ const tipoF=r=>/^SOL-/.test(r)?'Entrega':/^EA-/.test(r)?'Entrada':/^FDP-/.test(r)?'Daño o pérdida':'Otra';
+ S.fotos=[];Object.entries(typeof FOTOS!=='undefined'?FOTOS:{}).forEach(([ref,L])=>L.forEach(f=>{const t=String(f.creado_en||'');
+  const sol=S.sols.find(s=>s.id===ref),fdp=(S.fdp||[]).find(x=>x.id===ref);
+  S.fotos.push({id:'F'+f.id,f:t.slice(0,10),h:t.slice(11,16),proy:sol?sol.proy:fdp?fdp.proy:'',ref,tipo:tipoF(ref),kb:+f.kb||0,u:f.tomada_por,ruta:f.ruta})}));
+ S.proys.forEach(p=>{const L=S.fotos.filter(f=>f.proy===p.id);p.fotos=L.length;p.mb=+(L.reduce((a,f)=>a+f.kb,0)/1024).toFixed(2)});
+}}
+
+/* ---------- Fotos guardadas en el archivador: se ven con un enlace temporal ---------- */
+async function fotoUrls(rutas){if(!rutas.length)return[];const {data,error}=await SB.storage.from('alm-fotos').createSignedUrls(rutas,3600);if(error)throw error;return(data||[]).map(x=>x.signedUrl||'')}
+galeria=function(L){if(!L.length)return'<span class="sub">Sin fotos de evidencia.</span>';
+ setTimeout(async()=>{try{const U_=await fotoUrls(L.map(f=>f.ruta));L.forEach((f,i)=>{const el=document.querySelector(`[data-fimg="${f.id}"]`);if(el&&U_[i])el.src=U_[i]})}catch(e){console.error(e)}},0);
+ return`<div class="evth">${L.map(f=>`<button class="evi" data-act="verFoto" data-v="${f.id}"><img data-fimg="${f.id}" alt="Foto ${esc(f.ref)}"><small>${fd(f.f)} ${f.h}</small></button>`).join('')}</div>`};
+ACT.verFoto=async v=>{const f=S.fotos.find(x=>x.id===v);if(!f)return;let u='';try{u=(await fotoUrls([f.ruta]))[0]}catch(e){}
+ modal(mh('Foto de '+esc(f.ref),`${f.proy?esc(f.proy)+' · ':''}${fd(f.f)} ${f.h} · ${esc(f.u||'')}`)+(u?`<img class="fotobig" src="${esc(u)}" alt="Evidencia">`:'<p class="mut">No se pudo abrir la foto. Revisa la conexión.</p>')+`<div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'w')};
+
+/* ---------- Entregar una solicitud con fotos de evidencia (opcionales) ---------- */
+ACT.doEnt=async(v,el)=>{const s=S.sols.find(x=>x.id===v);if(!s)return;const rec=($('#eRec')||{value:''}).value.trim();if(!rec){toast('Indica quién recibe el material.','er');return}
+ const ent=s.lineas.map((l,i)=>({i,q:parseFloat(($('#eq'+i)||{value:0}).value)||0})).filter(x=>x.q>0);if(!ent.length){toast('No hay cantidades para entregar.','er');return}
+ const fotos=(typeof EVD!=='undefined'&&EVD?EVD.slice():[]);
+ await sbAccion(el,'Entregando…',async()=>{const {data,error}=await SB.rpc('alm_sol_entregar',{p_id:v,p_ent:ent,p_recibe:rec});if(error)throw error;
+  let fo={ok:0,err:[],omit:0};if(fotos.length){el&&(el.textContent='Subiendo fotos…');const blobs=[];for(const d of fotos){try{blobs.push(await (await fetch(d)).blob())}catch(e){}}fo=await fotosSubir(v,blobs);fo.omit+=fotos.length-blobs.length}
+  if(typeof EVD!=='undefined')EVD=[];
+  await cargarDatos();closeModal();rerender();
+  toast(`${v}: entrega registrada y cargada al proyecto ${s.proy} (${mm(data.valor)} a costo Siesa)${data.completa?'':' · quedó parcial'}${fo.ok?' · '+fo.ok+' foto(s) de evidencia':''}.`,'ok');
+  if(fo.err.length||fo.omit)toast(`${fo.err.length+fo.omit} foto(s) no se guardaron${fo.err[0]?': '+esc(fo.err[0]):''}. La entrega sí quedó registrada.`,'wa')})};
+
+/* ---------- Producción confirma que recibió ---------- */
+ACT.confSol=async(v,el)=>{await sbAccion(el,'…',async()=>{const {error}=await SB.rpc('alm_sol_confirmar',{p_id:v});if(error)throw error;await cargarDatos();rerender();toast(v+': recibido confirmado.','ok')})};
+
+/* ---------- EPP, dotación y herramienta con firma (gasto general) ---------- */
+ACT.saveEpp=async(v,el)=>{const tec=$('#pTec').value;const sel=[...document.querySelectorAll('[data-pe]:checked')].map(x=>x.dataset.pe);
+ if(!tec){toast('Elige el técnico.','er');return}if(!sel.length){toast('Marca al menos un elemento.','er');return}if(!SIG||!SIG.drawn){toast('Falta la firma de recibido.','er');return}
+ for(const c of sel)if(disp(M(c))<1){toast('No hay stock de '+esc(M(c).desc)+'.','er');return}
+ const firma=$('#sig').toDataURL('image/png');
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_epp_entregar',{p:{tec,mot:$('#pMot').value,firma,items:sel.map(cod=>({cod,q:1}))}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${data.n} elemento(s) entregados a ${esc(data.tecnico)} con firma (${mm(data.valor)}, gasto general).`,'ok')})};
+{const _ee=entEpp;entEpp=function(){_ee.apply(this,arguments);const b=$('#pMot');
+ if(b)b.closest('.two').insertAdjacentHTML('afterend','<p class="mut3" style="font-size:12px;margin-top:8px">Sale de AL001 como gasto general (no se carga a ningún proyecto), al costo de Siesa.</p>')}}
+
+/* Ver la firma de una entrega */
+ACT.verFirma=async v=>{const e=S.epp.find(x=>x.id===v);if(!e)return;let img='';
+ try{const {data,error}=await SB.from('alm_epp').select('id,firma').eq('id',v);if(error)throw error;const r=(data||[]).find(x=>x.id===v);img=r?r.firma:''}catch(x){}
+ const t=T(e.tec)||{nombre:e.tecNom};
+ modal(mh('Firma de recibido · '+esc(v),`${esc(t.nombre||e.tecNom)} · ${esc(M(e.cod).desc)} · ${fd(e.f)} ${e.h||''}`)+(/^data:image\/png;base64,/.test(img)?`<div style="background:#fff;border:1px solid var(--bd2);border-radius:12px;padding:8px"><img src="${img}" alt="Firma" style="width:100%;max-height:200px;object-fit:contain"></div>`:'<p class="mut">No se pudo abrir la firma.</p>')+`<p class="mut3" style="font-size:12px;margin-top:8px">Entregó ${esc(e.u)} · motivo: ${esc(e.mot)}</p><div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'s')};
+
+/* Anular una entrega de EPP (Gerencia) */
+{const _da=ACT.delAsk;ACT.delAsk=(v,el)=>{const t=v.slice(0,v.indexOf('|')),id=v.slice(v.indexOf('|')+1);
+ if(t==='epp'){const e=S.epp.find(x=>x.id===id);if(!e)return;modal(mh('Anular '+esc(id),esc(M(e.cod).desc)+' · '+esc((T(e.tec)||{}).nombre||e.tecNom))+`<p class="mut" style="line-height:1.55">El elemento vuelve a AL001 con un movimiento nuevo y la entrega sale del historial. Úsalo solo si se registró por error.</p><div class="fld" style="margin-top:10px"><label for="epAn">Motivo</label><input class="inp" id="epAn" placeholder="Ej.: se registró al técnico equivocado"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="eppAnularGo" data-v="${esc(id)}">Anular entrega</button></div>`,'s');return}
+ return _da(v,el)}}
+ACT.eppAnularGo=async(v,el)=>{const mo=($('#epAn').value||'').trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_epp_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' anulada; el elemento volvió a AL001.','ok')})};
+
+/* ---------- Pestaña «Costos» de EPP ---------- */
+function eppFilas(){const R=[];
+ S.epp.forEach(e=>{const m=M(e.cod);R.push({id:e.id,f:e.f,tec:e.tec,cod:e.cod,q:e.q,cu:e.cu,canal:'Entrega con firma',a:'Gasto general',firma:true,fam:m.fam,prot:protDe(m)})});
+ S.movs.forEach(x=>{if(x.t!=='Salida'||x.anul||!/^SOL-/.test(x.doc||''))return;const m=MI[x.cod];if(!m||!FAM_EPP.includes(m.fam))return;
+  const s=S.sols.find(y=>y.id===x.doc.split(' ')[0]);R.push({id:x.doc.split(' ')[0],f:x.f,tec:s?s.pideCod:'',cod:x.cod,q:x.q,cu:x.cu,canal:'Solicitud',a:'Proyecto '+(x.proy||'—'),firma:false,fam:m.fam,prot:protDe(m)})});
+ return R.sort((a,b)=>a.f<b.f?1:a.f>b.f?-1:0)}
+function eppCostos(tabs){const rg=U.f.ecR||'30';const desde=rg==='rango'?(U.f.ecD||addD(HOY,-30)):addD(HOY,-(+rg));const hasta=rg==='rango'?(U.f.ecH||HOY):HOY;
+ const fT=U.f.ecT||'',fP=U.f.ecP||'',fF=U.f.ecF||'',fC=U.f.ecC||'todos';
+ const L=eppFilas().filter(r=>r.f>=desde&&r.f<=hasta&&(!fT||r.tec===fT)&&(!fP||r.prot===fP)&&(!fF||r.fam===fF)&&(fC==='todos'||(fC==='firma'?r.firma:!r.firma)));
+ const tot=L.reduce((a,r)=>a+r.q*r.cu,0),nq=L.reduce((a,r)=>a+r.q,0),tecs=[...new Set(L.map(r=>r.tec).filter(Boolean))];
+ const nomT=c=>{const t=T(c);return t&&t.nombre?t.nombre:(S.epp.find(e=>e.tec===c)||{}).tecNom||c||'—'};
+ const byP={};L.forEach(r=>{const k=r.prot;byP[k]=byP[k]||{n:0,v:0};byP[k].n+=r.q;byP[k].v+=r.q*r.cu});
+ const PP=Object.entries(byP).sort((a,b)=>b[1].v-a[1].v);
+ const byT={};L.forEach(r=>{const k=r.tec||'—';byT[k]=byT[k]||{n:0,v:0,u:''};byT[k].n+=r.q;byT[k].v+=r.q*r.cu;if(r.f>byT[k].u)byT[k].u=r.f});
+ const TT=Object.entries(byT).sort((a,b)=>b[1].v-a[1].v);
+ const per=`Del ${desde} al ${hasta}`;
+ regT('eppC','Costos de EPP, dotación y herramienta',['Fecha','Documento','Código técnico','Técnico','Código','Elemento','Familia','Tipo de protección','Cantidad','Costo unitario','Costo total','Canal','Cargado a'],L.map(r=>[r.f,r.id,r.tec,nomT(r.tec),r.cod,M(r.cod).desc,r.fam,r.prot,r.q,Math.round(r.cu),Math.round(r.q*r.cu),r.canal,r.a]),per);
+ regT('eppCP','Costo de EPP por tipo de protección',['Tipo de protección','Elementos','Costo','% del total'],PP.map(([k,x])=>[k,x.n,Math.round(x.v),tot?+(x.v/tot*100).toFixed(1):0]),per);
+ regT('eppCT','Costo de EPP por técnico',['Código','Técnico','Elementos','Costo','Última entrega'],TT.map(([k,x])=>[k,nomT(k),x.n,Math.round(x.v),x.u]),per);
+ const sel=(k,txt,opts,cur)=>`<select class="sel" data-f="${k}" aria-label="${txt}"><option value="">${txt}</option>${opts.map(o=>`<option value="${esc(o[0])}" ${o[0]===cur?'selected':''}>${esc(o[1])}</option>`).join('')}</select>`;
+ return`<div class="fbar">${tabs}</div>
+ <div class="fbar">${sel('ecT','Todos los técnicos',S.tecs.map(t=>[t.cod,t.nombre+(t.activo?'':' (deshabilitado)')]),fT)}${sel('ecP','Todos los tipos de protección',PROT.map(x=>[x,x]),fP)}${sel('ecF','Todas las familias',FAM_EPP.map(x=>[x,x]),fF)}
+ ${seg('ecC',[['todos','Todo'],['firma','Entregas con firma'],['sol','Por solicitud']],fC)}</div>
+ <div class="fbar">${seg('ecR',[['7','7 días'],['30','30 días'],['90','90 días'],['365','12 meses'],['rango','De… a…']],rg)}${rg==='rango'?`<input class="inp" style="width:auto" type="date" data-f="ecD" value="${desde}" aria-label="Desde"><input class="inp" style="width:auto" type="date" data-f="ecH" value="${hasta}" aria-label="Hasta">`:''}<div class="sp"></div>${xbtns('eppC')}</div>
+ <div class="g12 minis"><div class="c3">${kpi('Costo en el período',mm(tot),fd(desde)+' a '+fd(hasta),'box')}</div><div class="c3">${kpi('Elementos entregados',qf(nq),L.length+' registros','sign')}</div><div class="c3">${kpi('Técnicos con entregas',tecs.length,'en el período','users')}</div><div class="c3">${kpi('Costo promedio por técnico',mm(tecs.length?tot/tecs.length:0),'costo ÷ técnicos','bars')}</div></div>
+ <div class="g12"><div class="card c6"><div class="ch"><div><h3>Por tipo de protección</h3><p>Manos, cabeza, cara y ojos, respiratoria, auditiva, pies, cuerpo y caídas</p></div><div class="acts">${xbtns('eppCP')}</div></div>
+ ${PP.length?PP.map(([k,x])=>`<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:13px"><b>${esc(k)}</b><span>${money(x.v)} · ${qf(x.n)} elem. · ${tot?nf1.format(x.v/tot*100):0}%</span></div>${bar(tot?x.v/tot:0)}</div>`).join(''):empty('Sin entregas en este filtro')}</div>
+ <div class="card c6"><div class="ch"><div><h3>Por técnico</h3><p>Quién recibió más y cuánto costó</p></div><div class="acts">${xbtns('eppCT')}</div></div>
+ ${tbl(['Técnico','Elementos','Costo','Última'],TT.map(([k,x])=>[`<b>${esc(nomT(k))}</b><div class="sub">${esc(k)}</div>`,qf(x.n),money(x.v),fd(x.u)]),[1,2],360)}</div></div>
+ <div class="card"><div class="ch"><div><h3>Detalle</h3><p>Las entregas con firma son gasto general. Lo pedido por solicitud quedó cargado al proyecto (decisión 65).</p></div></div>
+ ${tbl(['Fecha','Técnico','Elemento','Tipo','Cant.','Costo unit.','Costo total','Canal',''],L.map(r=>[fd(r.f),`<b>${esc(nomT(r.tec))}</b><div class="sub">${esc(r.tec||'')}</div>`,`${esc(M(r.cod).desc)}<div class="sub">${esc(r.fam)} · ${esc(r.cod)}</div>`,esc(r.prot),qf(r.q),money(r.cu),money(r.q*r.cu),`${esc(r.canal)}<div class="sub">${esc(r.a)} · ${esc(r.id)}</div>`,r.firma?`<button class="btn link sm" data-act="verFirma" data-v="${esc(r.id)}">Ver firma</button>`:'']),[4,5,6],560)}</div>`}
+{const _ve=VIEWS.epp;VIEWS.epp=function(){
+ const add=h=>h.replace(/(data-k="epp" data-v="venc">[\s\S]*?<\/button>)/,`$1<button class="${U.tab.epp==='cost'?'on':''}" data-act="tab" data-k="epp" data-v="cost">Costos</button>`);
+ if(U.tab.epp!=='cost')return add(_ve.apply(this,arguments));
+ const ev=eppVenc();const tabs=`<div class="tabs" style="margin:0">${[['tec','Técnicos'],['hist','Historial de entregas'],['venc','Por reponer <span class="cnt">'+ev.length+'</span>'],['cost','Costos']].map(t=>`<button class="${U.tab.epp===t[0]?'on':''}" data-act="tab" data-k="epp" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+ return eppCostos(tabs)}}
+
+/* Tipo de protección al editar un material */
+{const _em=editMat;editMat=function(cod){_em.apply(this,arguments);const m=M(cod);const v=$('#emVida');if(!v)return;const box=v.closest('.two')||v.closest('.fld');
+ box.insertAdjacentHTML('afterend',`<div class="fld" style="margin-top:12px"><label for="emProt">Tipo de protección (EPP, dotación y herramienta)</label><select class="sel" id="emProt">${PROT.map(x=>`<option ${x===protDe(m)?'selected':''}>${x}</option>`).join('')}</select></div>`)}}
+
+/* ---------- Surtido y kits ---------- */
+ACT.kitOk=async(v,el)=>{const p=P(U.f.kP||(S.proys.find(x=>x.estado==='Activo'&&x.bom.length)||{}).id);if(!p)return;
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_kit_listo',{p_proy:p.id,p_sec:v});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Kit de '+esc(v)+' listo en despacho.','ok')})};
+ACT.betts=()=>toast('El kit Betts se maneja como piezas sueltas (decisión 46).','i');
+{const _vk=VIEWS.kit;VIEWS.kit=function(){let h=_vk.apply(this,arguments);
+ const i=h.indexOf('<div class="card c6"><div class="ch"><div><h3>Kit Betts del manhole</h3>'),j=h.indexOf('<div class="card c6"><div class="ch"><div><h3>Líneas sin stock suficiente</h3>');
+ if(i<0||j<0)return h;
+ const fp=U.f.kP||(S.proys.find(x=>x.estado==='Activo'&&x.bom.length)||{}).id;const p=P(fp);
+ const cods=((typeof KITS0!=='undefined'&&KITS0[0]&&KITS0[0].cods)||[]).filter(c=>MI[c]);
+ const bomQ=c=>p?p.bom.filter(l=>l.cod===c).reduce((a,l)=>a+l.q,0):0;
+ const card=`<div class="card c6"><div class="ch"><div><h3>Kit Betts del manhole</h3><p>Se maneja como piezas sueltas (decisión 46): cada pieza se pide y se entrega con su código.</p></div></div>
+ ${cods.length?tbl(['Pieza','Descripción','BOM '+(p?p.id:''),'Disponible'],cods.map(c=>{const m=M(c);return[cc(c),esc(m.desc),qf(bomQ(c)),qf(disp(m))]}),[2,3]):empty('Las piezas del kit Betts todavía no están en el catálogo.','layers')}</div>
+ `;
+ return h.slice(0,i)+card+h.slice(j)}}
+
+/* ---------- Modelos y kits: se activa después (decisión 82) ---------- */
+const MOD_PEND=['kitEd','kitSave','modSave','kiAdd','kiDel'];
+{const _vm=VIEWS.mod;VIEWS.mod=function(){return`<div class="note">${icon('info',16)}<span><b>Modelos y kits se activa más adelante.</b> Por ahora el BOM de cada proyecto lo envía Diseño y se carga en Proyectos. Esta pantalla solo se puede consultar.</span></div>`+_vm.apply(this,arguments)}}
+document.addEventListener('click',e=>{if(!U.user||U.kiosk)return;const el=e.target.closest&&e.target.closest('[data-act]');if(!el||!MOD_PEND.includes(el.dataset.act))return;
+ e.preventDefault();e.stopImmediatePropagation();toast('Modelos y kits se activa más adelante. Por ahora el BOM se carga en cada proyecto.','i')},true);
+new MutationObserver(()=>{if(!U.user||U.kiosk)return;
+ $$('[data-act]').forEach(el=>{if(MOD_PEND.includes(el.dataset.act)&&!el.classList.contains('sbOff')){el.classList.add('sbOff');el.setAttribute('aria-disabled','true');el.setAttribute('data-tip','Se activa más adelante')}});
+ $$('[data-mk],#mdFile,#mdNota').forEach(x=>{if(!x.disabled){x.disabled=true;x.title='Se activa más adelante'}})}).observe(document.body,{childList:true,subtree:true});
+
+/* ---------- Permisos visibles (decisión 34) ---------- */
+Object.assign(ACT_PERM,{saveEpp:'epp.ent',kitOk:'kit.prep',eppAnularGo:'epp.anular'});
 
 </script>
 </body>
