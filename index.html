@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.8 · bloque 6';
+const VERSION='4.5.9 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -5733,6 +5733,107 @@ async function actzRevisar(){if(!SB||!U.user||U.kiosk||ACTZ.corriendo||document.
  if(await actzRefrescar(true))toast('Llegó: '+nuevos.join(', ')+'. Ya está en pantalla.','ok')}
 setInterval(actzRevisar,60000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&U.user&&!U.kiosk&&!actzModal()&&Date.now()-ACTZ.ult>5*60000)actzRefrescar(true)});
+
+/* ================= v4.5.9 · Autorización de datos personales (Ley 1581) · SQL 21 =================
+   Igual que en la app HH: la primera vez que un técnico usa el QR ve la autorización (casilla +
+   «Acepto y continuar» / «No acepto»). Sin aceptar no registra nada desde el QR. La aceptación viaja
+   en la misma solicitud (acepta_datos) y la base la guarda: fecha, versión y por dónde.
+   En la app: pestaña «Autorización de datos» en Técnicos y EPP (estado, registrar con el técnico
+   presente, Excel y PDF de constancia). */
+let CONS={vig:'',txt:{},desde:{},tec:{}};
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd.apply(this,arguments);if(KQ&&KQ.on&&!U.user)return;
+ try{const [t,c]=await Promise.all([leerTodo('alm_tecnicos','cod,consentimiento_en,consentimiento_version,consentimiento_por','cod'),SB.from('alm_config').select('clave,valor')]);
+  CONS.tec={};(t||[]).forEach(x=>{CONS.tec[x.cod]={en:x.consentimiento_en,ver:x.consentimiento_version,por:x.consentimiento_por}});
+  const r=((c&&c.data)||[]).find(x=>x.clave==='consentimiento');if(r&&r.valor){CONS.vig=r.valor.vigente||'';CONS.txt={};CONS.desde={};Object.entries(r.valor.versiones||{}).forEach(([k,v])=>{CONS.txt[k]=v.texto;CONS.desde[k]=v.desde})}}
+ catch(e){}}}
+const consFecha=s=>s?fd(String(s).slice(0,10))+' '+String(new Date(s).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',hour12:false})):'';
+function consHtml(nombre,texto){const t=String(texto||'').replace('{nombre}',nombre||'');const p=t.split(/\n\n+/);
+ return`<div style="line-height:1.6;max-height:46vh;overflow:auto;padding:4px 2px">${p.slice(1).map(x=>{const m=x.match(/^([^.]{3,30}\.)\s([\s\S]*)$/);return`<p style="margin:0 0 10px">${m?`<b>${esc(m[1])}</b> ${esc(m[2])}`:esc(x)}</p>`}).join('')}</div>`}
+function consModal(nombre,texto,ver,onOk,onNo,extra){
+ modal(mh('Autorización de uso de tus datos','Solo se pide una vez · versión '+esc(ver))+consHtml(nombre,texto)+(extra||'')+
+ `<label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;cursor:pointer"><input type="checkbox" id="consChk" style="width:20px;height:20px;margin-top:2px"><span>He leído y autorizo el uso de mis datos como se explica arriba.</span></label>
+ <div class="mf"><button class="btn ghost" data-act="consNo">No acepto</button><button class="btn" data-act="consSi" id="consSi" disabled>${icon('check',16)}Acepto y continuar</button></div>`,'s');
+ const c=$('#consChk');c.addEventListener('change',()=>{$('#consSi').disabled=!c.checked});CONS.ok=onOk;CONS.no=onNo}
+ACT.consSi=async(v,el)=>{if(!($('#consChk')||{}).checked){toast('Marca la casilla para aceptar.','er');return}const f=CONS.ok;CONS.ok=null;if(f)await f(el)};
+ACT.consNo=()=>{const f=CONS.no;CONS.no=null;closeModal();if(f)f()};
+
+/* ---------- QR del taller ---------- */
+{const _rpc=SB&&SB.rpc&&SB.rpc.bind(SB);if(_rpc)SB.rpc=function(fn,args,o){
+ if(KQ.on&&KQ.acepta&&/^alm_kiosk_(solicitar|devolver|fdp|bom_error)$/.test(fn)&&args&&args.p)args=Object.assign({},args,{p:Object.assign({},args.p,{acepta_datos:KQ.acepta})});
+ return _rpc(fn,args,o)}}
+{const _k1=ACT.k1;ACT.k1=async(v,el)=>{await _k1(v,el);if(!KQ.on||!K.tec)return;const t=K.tec;
+ if(!t.consent_vigente||t.consent||KQ.acepta===t.consent_vigente)return;
+ consModal(t.nombre,t.consent_texto,t.consent_vigente,async()=>{KQ.acepta=t.consent_vigente;closeModal();toast('Gracias. Tu autorización queda registrada con tu primera solicitud.','ok')},
+  ()=>{KQ.acepta='';K.tec=null;KQ.tec=null;K.step=1;renderKiosk();toast('Sin tu autorización no se pueden registrar solicitudes desde el QR. Avísale a tu supervisor.','wa')})}}
+
+/* ---------- App: pestaña «Autorización de datos» en Técnicos y EPP ---------- */
+function consCard(tabs){const L=S.tecs.filter(t=>t.activo||CONS.tec[t.cod]&&CONS.tec[t.cod].en);const ok=L.filter(t=>CONS.tec[t.cod]&&CONS.tec[t.cod].en),pend=L.filter(t=>t.activo&&!(CONS.tec[t.cod]&&CONS.tec[t.cod].en));
+ const puede=['Gerencia','Auxiliar'].includes(U.user.rol);
+ regT('cons','Constancia de autorización de datos (Ley 1581)',['Código','Nombre','Iniciales','Cargo','Estado','Aceptó el','Versión del texto','Registrada por'],L.map(t=>{const c=CONS.tec[t.cod]||{};return[t.cod,t.nombre,t.ini,t.cargo,c.en?'Aceptó':'Pendiente',c.en?consFecha(c.en):'',c.ver||'',c.por||'']}),'Texto vigente '+(CONS.vig||'')+(CONS.desde[CONS.vig]?' · rige desde '+CONS.desde[CONS.vig]:''));
+ return`<div class="card"><div class="ch"><div>${tabs}</div></div>
+ <div class="ch" style="margin-top:12px"><div><h3>Autorización de uso de datos personales</h3><p>Igual que en la app HH: cada técnico la acepta una sola vez, la primera vez que usa el QR, o aquí en la tablet con el técnico presente. Queda la fecha, la versión del texto y por dónde se registró.</p></div><div class="acts">${xbtns('cons')}<button class="btn ghost sm" data-act="consVer">${icon('search',14)}Ver texto ${esc(CONS.vig||'')}</button></div></div>
+ <div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px"><span class="bd ok">Aceptaron: ${ok.length}</span><span class="bd wa">Pendientes: ${pend.length}</span></div>
+ ${!CONS.vig?`<div class="note wa">${icon('warn',16)}<span>Falta correr el SQL 21 en Supabase: todavía no hay texto de autorización.</span></div>`:''}
+ <div class="tw"><table class="t stkm"><thead><tr><th>Código</th><th>Técnico</th><th>Estado</th><th>Aceptó el</th><th>Versión</th><th>Registrada por</th><th></th></tr></thead><tbody>${L.map(t=>{const c=CONS.tec[t.cod]||{};return`<tr><td class="nm"><b>${esc(t.cod)}</b> · ${esc(t.ini)}</td><td data-l="Técnico">${esc(t.nombre)}<div class="sub">${esc(t.cargo||'')}</div></td><td data-l="Estado">${c.en?'<span class="bd ok">Aceptó</span>':t.activo?'<span class="bd wa">Pendiente</span>':'<span class="bd">Inactivo</span>'}</td><td data-l="Aceptó el">${c.en?consFecha(c.en):'—'}</td><td data-l="Versión">${esc(c.ver||'—')}</td><td data-l="Registrada por">${esc(c.por||'—')}</td><td>${!c.en&&t.activo&&CONS.vig?`<button class="btn ghost sm" data-act="consReg" data-v="${esc(t.cod)}" ${puede?'':'disabled title="Solo Gerencia o el Auxiliar"'}>${icon('check',14)}Registrar autorización</button>`:''}</td></tr>`}).join('')}</tbody></table></div>
+ <p class="mut3" style="font-size:12px;margin-top:10px">Lo que no guarda este registro: el dispositivo o la red desde donde se aceptó, ni los retiros posteriores de la autorización (se atienden por correo y se registran aparte). Conviene que el área jurídica revise el texto.</p></div>`}
+{const _ve=VIEWS.epp;VIEWS.epp=function(){
+ const add=h=>h.replace(/(data-k="epp" data-v="cost">Costos<\/button>)/,`$1<button class="${U.tab.epp==='cons'?'on':''}" data-act="tab" data-k="epp" data-v="cons">Autorización de datos</button>`);
+ if(U.tab.epp!=='cons')return add(_ve.apply(this,arguments));
+ const ev=eppVenc();const tabs=`<div class="tabs" style="margin:0">${[['tec','Técnicos'],['hist','Historial de entregas'],['venc','Por reponer <span class="cnt">'+ev.length+'</span>'],['cost','Costos'],['cons','Autorización de datos']].map(t=>`<button class="${U.tab.epp===t[0]?'on':''}" data-act="tab" data-k="epp" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+ return consCard(tabs)}}
+ACT.consVer=()=>{modal(mh('Texto de la autorización','Versión '+esc(CONS.vig)+(CONS.desde[CONS.vig]?' · rige desde '+esc(CONS.desde[CONS.vig]):''))+consHtml('[nombre del técnico]',CONS.txt[CONS.vig])+`<div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'s')};
+ACT.consReg=v=>{const t=T(v);if(!t||!CONS.vig)return;
+ consModal(t.nombre,CONS.txt[CONS.vig],CONS.vig,async el=>{await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_consent_registrar',{p_cod:t.cod,p_version:CONS.vig});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(data.ya?esc(t.nombre)+' ya había aceptado.':'Autorización de '+esc(t.nombre)+' registrada.','ok')})},
+  ()=>toast(esc(t.nombre)+' no aceptó: no se registra nada. Puede pedir por medio de su supervisor.','wa'),
+  `<div class="note" style="margin-top:6px">${icon('users',16)}<span>Pásale la tablet a <b>${esc(t.nombre)}</b> (${esc(t.cod)}) para que lea, marque la casilla y toque «Acepto y continuar».</span></div>`)};
+Object.assign(ACT_PERM,{consReg:'epp.ent'});
+
+/* ================= v4.5.9 · Buscador del menú (como en la app HH) =================
+   Cuadro «Buscar…  Ctrl K» debajo de la tarjeta del usuario. Filtra las pantallas del menú por su
+   nombre y por palabras clave (ej.: «retal» → Láminas y corte, «copia» → Ajustes). Enter abre la
+   primera; Esc limpia; Ctrl+K (o Cmd+K) pone el cursor en el buscador. */
+const NAVQ_CLAVES={dash:'inicio indicadores tablero informe ejecutivo resumen',proy:'proyecto tanque bom ot orden de trabajo vin etapas linea de tiempo liberar',
+ mod:'modelos kits bom modelo',dis:'diseno ingenieria planos',proyc:'proyeccion compras faltantes',oc:'orden de compra oc proveedor compras',
+ ea:'entrada recibo factura remision proveedor',cal:'calidad mtr colada cuarentena liberar material rechazar',lib:'liberacion certificado prueba calidad tanque firma',
+ sol:'solicitud pedido pedir entregar entrega preparar excedente',kit:'surtido kits betts preparar',planta:'material en planta devolucion devolver',
+ dano:'dano perdida fdp formato',corte:'corte laser lamina retal chatarra venta acopio',epp:'tecnicos epp dotacion herramienta firma tallas costos autorizacion datos consentimiento ley 1581',
+ mat:'materiales existencias inventario maestro siesa codigo piezas cl sin codigo minimos',ubi:'ubicaciones estante bodega',cnt:'conteo ciclico contar',
+ rep:'minimos maximos reposicion',kdx:'kardex movimientos historial',traz:'trazabilidad historia material',inf:'informes reportes excel pdf',
+ flujo:'flujo proceso ayuda',ajus:'ajustes copia de seguridad respaldo qr usuarios firma logo chatarra precio borrar arranque fotos limpieza',
+ inv:'inventario mensual',invc:'consolidado mensual siesa appolo inventario fisico cierre'};
+const navNorm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+let NAVQ='';
+function navItems(){return NAV.filter(n=>n.id&&!n.kids&&(!n.r||!U.user||n.r.includes(U.user.rol)))}
+function navBuscar(q){const w=navNorm(q).split(/\s+/).filter(Boolean);if(!w.length)return[];
+ return navItems().map(n=>{const par=n.par?(NAV.find(x=>x.id===n.par)||{}).t:'';const t=navNorm(n.t),cl=navNorm(par+' '+(NAVQ_CLAVES[n.id]||''));
+  let pts=0;for(const x of w){if(t.startsWith(x))pts+=3;else if(t.includes(x))pts+=2;else if(cl.includes(x))pts+=1;else return null}return{n,pts,par}}).filter(Boolean).sort((a,b)=>b.pts-a.pts)}
+function navPintar(){const nav=$('.side .nav');if(!nav)return;
+ if(!NAVQ){if(nav.dataset.q){delete nav.dataset.q;render()}return}
+ const R=navBuscar(NAVQ);nav.dataset.q='1';
+ nav.innerHTML=`<div class="grp"><span>Resultados (${R.length})</span></div>`+(R.length?R.map((r,i)=>`<button class="ni ${i===0?'on':''}" data-act="navIr" data-v="${r.n.id}" data-tip="${esc(r.n.t)}">${icon(r.n.ic||'cr',19)}<span class="lbl">${esc(r.n.t)}${r.par?`<small style="display:block;opacity:.7;font-size:11px">${esc(r.par)}</small>`:''}</span></button>`).join(''):`<div class="mut3" style="padding:10px 14px;font-size:13px">Nada con «${esc(NAVQ)}». Prueba con otra palabra.</div>`)}
+ACT.navIr=v=>{NAVQ='';const i=$('#navQ');if(i)i.value='';ACT.go(v)};
+function navCaja(){const side=$('.side');if(!side||!U.user||U.kiosk||$('#navQ'))return;const prof=side.querySelector('.prof');if(!prof)return;
+ const d=document.createElement('div');d.className='navq';
+ d.innerHTML=`<span class="navq-i">${icon('search',16)}</span><input id="navQ" type="search" placeholder="Buscar…" autocomplete="off" aria-label="Buscar en el menú"><kbd>Ctrl K</kbd>`;
+ prof.insertAdjacentElement('afterend',d);const inp=$('#navQ');inp.value=NAVQ;
+ inp.addEventListener('input',()=>{NAVQ=inp.value.trim();navPintar()});
+ inp.addEventListener('keydown',e=>{if(e.key==='Enter'){const r=navBuscar(NAVQ);if(r.length){e.preventDefault();ACT.navIr(r[0].n.id)}}else if(e.key==='Escape'){NAVQ='';inp.value='';navPintar();inp.blur()}});
+ if(NAVQ)navPintar()}
+new MutationObserver(navCaja).observe(document.body,{childList:true,subtree:true});
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')&&U.user&&!U.kiosk){e.preventDefault();
+ if(U.col){U.col=false;saveUI();render()}const sd=$('.side');if(sd&&!sd.classList.contains('open')&&window.innerWidth<900){try{ACT.openSide()}catch(x){}}
+ setTimeout(()=>{const i=$('#navQ');if(i){i.focus();i.select()}},30)}});
+document.head.insertAdjacentHTML('beforeend',`<style>
+.navq{position:relative;display:flex;align-items:center;margin:2px 12px 10px;border:1px solid rgba(255,255,255,.18);border-radius:12px;background:rgba(255,255,255,.07);transition:border-color .15s,background .15s}
+.navq:focus-within{border-color:rgba(255,255,255,.45);background:rgba(255,255,255,.12)}
+.navq-i{display:flex;padding:0 6px 0 12px;color:rgba(255,255,255,.7)}
+.navq input{flex:1;min-width:0;background:none;border:0;outline:0;color:#fff;font:inherit;font-size:14px;padding:10px 4px}
+.navq input::placeholder{color:rgba(255,255,255,.6)}
+.navq input::-webkit-search-cancel-button{filter:invert(1);opacity:.6}
+.navq kbd{margin-right:10px;font-family:inherit;font-size:11px;line-height:1;padding:3px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.7);white-space:nowrap}
+.app.col .navq,.side.col .navq,body.col .navq{display:none}
+</style>`);
 
 </script>
 </body>
