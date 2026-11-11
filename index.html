@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.6 · bloque 6';
+const VERSION='4.5.7 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4735,7 +4735,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
   const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs'];
-  const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos'];
+  const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
    if(k==='alm_usuarios')rows.forEach(r=>r.id=null);
@@ -5629,6 +5629,69 @@ ACT.saveCorte=async(v,el)=>{
   await cargarDatos();closeModal();rerender();
   toast(`${data.id}: ${nf1.format(+data.consumido)} kg de lámina → ${(data.destinos||[]).map(x=>dLbl(x.d)+' '+nf1.format(+x.cons)+' kg').join(' · ')}. ${+data.retal>0?`Retal: ${ro.reduce((a,r)=>a+r.n,0)} pieza${ro.reduce((a,r)=>a+r.n,0)>1?'s':''} (${nf1.format(+data.retal)} kg) al inventario de retal`:'Sin retal'}; ${nf1.format(ch)} kg de chatarra al acopio.`,'ok')})};
 Object.assign(ACT_PERM,{retalImp:'mat.import',retChat:'corte.new',retChatGo:'corte.new'});
+
+/* ================= v4.5.7 · Materiales SIN código de Siesa (decisión 88, SQL 20) =================
+   Cargador por Excel (Gerencia o Auxiliar) con plantilla. La base pone el código por familia:
+   EPP-0001, DOT-0001, HER-0001, CON-0001, ACC-0001, MPR-0001. El valor unitario es un costo INTERNO
+   (no Siesa): cuenta en costos y tablero y se marca «interno». Se corrige en «Editar material». */
+const SC_FAM={'EPP':'EPP','DOTACION':'Dotación','HERRAMIENTA':'Herramienta','HERRAMIENTAS':'Herramienta','CONSUMIBLES':'Consumibles','CONSUMIBLE':'Consumibles','ACCESORIOS':'Accesorios','ACCESORIO':'Accesorios','MATERIA PRIMA':'Materia prima'};
+const SC_PREF={'EPP':'EPP-','Dotación':'DOT-','Herramienta':'HER-','Consumibles':'CON-','Accesorios':'ACC-','Materia prima':'MPR-'};
+const SC_UM={'UND':'und','UN':'und','UNIDAD':'und','UNIDADES':'und','U':'und','PAR':'par','PARES':'par','KG':'kg','KILO':'kg','KILOS':'kg','M':'m','MT':'m','METRO':'m','METROS':'m','GAL':'gal','GALON':'gal','L':'L','LT':'L','LITRO':'L','ROLLO':'rollo','CIL':'cil','CILINDRO':'cil'};
+const scNorm=s=>String(s==null?'':s).toUpperCase().replace(/\s+/g,' ').trim();
+const esInterno=m=>m&&m.src==='Creado en la app'&&!m.cl;
+const scPal=d=>scNorm(nrmH(d)).split(/[^A-Z0-9#]+/).filter(w=>w.length>=4&&!['PARA','CON','DE','LA','DEL','LOS','LAS'].includes(w));
+
+TPL.sincod={n:'Plantilla_materiales_sin_codigo',cols:['DESCRIPCION','FAMILIA','UNIDAD','CANTIDAD','VALOR UNITARIO','UBICACION'],ej:['GUANTE NITRILO NEGRO T/8','EPP','par',6,4500,'AL-EPP-1']};
+IMPF.sincod={
+ parse(rows){const h=hdr(rows,['DESC','CANTIDAD']);if(!h)return{ok:false,err:'No encontré las columnas «Descripción» y «Cantidad».'};
+  const cD=h.col('DESC'),cF=h.col('FAMILIA'),cU=h.col('UNIDAD')>=0?h.col('UNIDAD'):h.col('UM'),cQ=h.col('CANTIDAD'),cV=h.col('VALOR')>=0?h.col('VALOR'):h.col('COSTO'),cB=h.col('UBICACION');
+  const famDef=($('#scFam')||{}).value||'EPP';const L=[],E=[],W=[];const vistas={};
+  const ex=S.mats.map(m=>({cod:m.cod,d:scNorm(m.desc),p:scPal(m.desc)}));
+  rows.slice(h.i+1).forEach((r,k)=>{const d=scNorm(r[cD]);if(!d||nrmH(d).startsWith('DESCRIPCION'))return;const fila=h.i+k+2;
+   const fTxt=cF>=0?nrmH(r[cF]):'';const fam=fTxt?SC_FAM[fTxt]:famDef;
+   if(!fam){E.push('Fila '+fila+': la familia «'+(r[cF]??'')+'» no existe (EPP, Dotación, Herramienta, Consumibles, Accesorios o Materia prima)');return}
+   const uTxt=cU>=0?nrmH(r[cU]):'';const um=uTxt?SC_UM[uTxt]:'und';if(!um){E.push('Fila '+fila+': la unidad «'+(r[cU]??'')+'» no existe (und, par, kg, m, gal, L, rollo o cil)');return}
+   const q=cQ>=0&&r[cQ]!==''&&r[cQ]!=null?numv(r[cQ]):0;if(!(q>=0)){E.push('Fila '+fila+': cantidad no válida ('+(r[cQ]??'')+')');return}
+   const v=cV>=0&&r[cV]!==''&&r[cV]!=null?numv(r[cV]):0;if(!(v>=0)){E.push('Fila '+fila+': valor unitario no válido ('+(r[cV]??'')+')');return}
+   if(d.length<3){E.push('Fila '+fila+': falta la descripción');return}
+   if(vistas[d]){E.push('Fila '+fila+': «'+d+'» está repetida en el archivo (fila '+vistas[d]+')');return}vistas[d]=fila;
+   const igual=ex.find(x=>x.d===d);if(igual){E.push('Fila '+fila+': «'+d+'» ya existe con el código '+igual.cod);return}
+   const p=scPal(d);const par=ex.find(x=>p.length>=2&&p.filter(w=>x.p.includes(w)).length>=Math.min(3,p.length));
+   L.push({desc:d,fam,um,q,costo:v,ub:cB>=0?scNorm(r[cB]).slice(0,40):'',par:par?par.cod+' · '+M(par.cod).desc:''})});
+  // códigos que asignará la base (el consecutivo real lo pone la base al guardar)
+  const sig={};L.forEach(x=>{const pf=SC_PREF[x.fam];if(sig[pf]==null){sig[pf]=S.mats.filter(m=>m.cod.startsWith(pf)).reduce((a,m)=>Math.max(a,+m.cod.slice(pf.length)||0),0)}sig[pf]++;x.cod=pf+String(sig[pf]).padStart(4,'0')});
+  return{ok:L.length>0&&!E.length,L,E,val:L.reduce((a,x)=>a+x.q*x.costo,0),sinValor:L.filter(x=>!x.costo).length,par:L.filter(x=>x.par).length}},
+ prev(d){if(d.err)return errBox(d.err,[]);if(d.E.length)return errBox('Hay '+d.E.length+' errores. Corrígelos y vuelve a elegir el archivo:',d.E);
+  return`<div class="note">${icon('check',16)}<span><b>${d.L.length} materiales nuevos · ${nf0.format(d.L.reduce((a,x)=>a+x.q,0))} unidades · ${money(d.val)}.</b> Entran a AL001 con código propio de la app (no Siesa); el valor unitario es un <b>costo interno</b>.${d.sinValor?` <b>${d.sinValor} sin valor unitario</b>: quedan «sin costo» hasta que lo pongas en «Editar material».`:''}${d.par?` <b>${d.par} se parecen a un material que ya existe</b> (columna «Revisa»): si es el mismo, no lo cargues aquí.`:''}</span></div>`+
+   tbl(['Código (aprox.)','Descripción','Familia','UM','Cantidad','Valor unitario','Valor total','Revisa'],d.L.map(x=>[esc(x.cod),esc(x.desc),esc(x.fam),esc(x.um),nf0.format(x.q),x.costo?money(x.costo):'<span class="sub">sin valor</span>',money(x.q*x.costo),x.par?`<span class="sub" style="color:var(--wa,#B26B00)">Parecido a ${esc(x.par)}</span>`:'']),[4,5,6],420)+
+   `<p class="mut3" style="font-size:12px;margin-top:8px">El código definitivo lo pone la base al guardar, en orden por familia.</p>`},
+ async applyDb(d,archivo){const {data,error}=await SB.rpc('alm_importar_sin_codigo',{p_filas:d.L.map(x=>({desc:x.desc,fam:x.fam,um:x.um,q:x.q,costo:x.costo,ub:x.ub})),p_archivo:archivo});if(error)throw error;
+  const l=data.lista||[];return'Listo: '+data.materiales+' materiales creados ('+(l.length?esc(l[0].cod)+(l.length>1?' a '+esc(l[l.length-1].cod):''):'')+'), '+money(+data.valor)+'. Ya se pueden pedir.'}
+};
+ACT.sincodImp=()=>{if(!can('mat.new')){toast('Solo Gerencia o el Auxiliar cargan materiales sin código.','wa');return}
+ impModal('sincod','Cargar materiales sin código (Excel)','Para EPP, dotación, herramienta u otros materiales que no están en Siesa. Columnas: Descripción y Cantidad (obligatorias), Familia, Unidad, Valor unitario y Ubicación. La app les pone el código por familia (EPP-0001, DOT-0001, HER-0001, CON-0001, ACC-0001, MPR-0001). Descarga la plantilla para la próxima carga.');
+ const f=$('#impF');if(f&&!$('#scFam')){const box=document.createElement('div');box.className='fld';box.style.margin='0 0 12px';
+  box.innerHTML=`<label for="scFam">Familia para las filas que no la traen (elígela antes de subir el archivo)</label><select class="sel" id="scFam">${Object.keys(SC_PREF).map(x=>`<option ${x==='EPP'?'selected':''}>${x}</option>`).join('')}</select>`;
+  const anc=f.closest('label')||f;anc.parentNode.insertBefore(box,anc)}};
+Object.assign(ACT_PERM,{sincodImp:'mat.new'});
+
+/* Botón junto a «Nuevo material» */
+function scBoton(){const b=$('[data-act="newMat"]');if(!b||$('[data-act="sincodImp"]'))return;
+ const n=document.createElement('button');n.className='btn ghost';n.dataset.act='sincodImp';n.innerHTML=icon('up',16)+'Cargar materiales sin código (Excel)';
+ if(!can('mat.new')){n.disabled=true;n.title='Solo Gerencia o el Auxiliar'}b.parentNode.insertBefore(n,b)}
+/* Marca «costo interno» en la tabla de Materiales */
+function scMarcar(){$$('td[data-l="Costo unitario"]').forEach(td=>{if(td.dataset.sc)return;td.dataset.sc='1';const tr=td.closest('tr');if(!tr)return;
+ const c=(tr.cells[0]&&tr.cells[0].textContent||'').trim().split(/\s+/)[0];const m=MI[c];if(esInterno(m))td.insertAdjacentHTML('beforeend','<div class="sub" title="Costo interno: este material no está en Siesa">interno</div>')})}
+new MutationObserver(()=>{if(U.user&&U.view==='mat'){scBoton();scMarcar()}}).observe(document.body,{childList:true,subtree:true});
+
+/* «Editar material»: valor unitario para materiales creados en la app */
+{const _em=editMat;editMat=function(cod){_em(cod);const m=M(cod);if(!esInterno(m))return;const ok=can('mat.new');
+ const ref=$('#emDesc');if(!ref)return;const fld=ref.closest('.fld');
+ fld.insertAdjacentHTML('afterend',`<div class="fld" style="margin-top:12px"><label for="emVal">Valor unitario · costo interno (no está en Siesa)</label><input class="inp" id="emVal" type="number" min="0" step="1" value="${m.costo||''}" placeholder="Sin valor" ${ok?'':'disabled title="Solo Gerencia o el Auxiliar"'}></div>`)}}
+{const _se=ACT.saveEditMat;ACT.saveEditMat=async(v,el)=>{const m=M(v);const i=$('#emVal');
+ if(i&&!i.disabled&&esInterno(m)){const nv=i.value===''?0:+i.value;if(!(nv>=0)){toast('El valor unitario no es válido.','er');return}
+  if(nv!==(m.costo||0)){try{const {error}=await SB.rpc('alm_material_valor',{p_cod:v,p_valor:nv});if(error)throw error}catch(e){toast(sbErr(e),'er');return}}}
+ return _se(v,el)}}
 
 </script>
 </body>
