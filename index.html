@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.9 · bloque 6';
+const VERSION='4.5.10 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -5747,8 +5747,8 @@ let CONS={vig:'',txt:{},desde:{},tec:{}};
   const r=((c&&c.data)||[]).find(x=>x.clave==='consentimiento');if(r&&r.valor){CONS.vig=r.valor.vigente||'';CONS.txt={};CONS.desde={};Object.entries(r.valor.versiones||{}).forEach(([k,v])=>{CONS.txt[k]=v.texto;CONS.desde[k]=v.desde})}}
  catch(e){}}}
 const consFecha=s=>s?fd(String(s).slice(0,10))+' '+String(new Date(s).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',hour12:false})):'';
-function consHtml(nombre,texto){const t=String(texto||'').replace('{nombre}',nombre||'');const p=t.split(/\n\n+/);
- return`<div style="line-height:1.6;max-height:46vh;overflow:auto;padding:4px 2px">${p.slice(1).map(x=>{const m=x.match(/^([^.]{3,30}\.)\s([\s\S]*)$/);return`<p style="margin:0 0 10px">${m?`<b>${esc(m[1])}</b> ${esc(m[2])}`:esc(x)}</p>`}).join('')}</div>`}
+function consHtml(nombre,texto){const t=String(texto||'').replace(/\r\n?/g,'\n').replace('{nombre}',nombre||'').trim();let p=t.split(/\n\s*\n+/).map(x=>x.trim()).filter(Boolean);if(p.length>1&&/^Autorizaci/i.test(p[0]))p=p.slice(1);if(!p.length)p=['No se pudo leer el texto de la autorización. Avísale a almacén antes de aceptar.'];
+ return`<div style="line-height:1.6;max-height:46vh;overflow:auto;padding:4px 2px">${p.map(x=>{const m=x.match(/^([^.]{3,30}\.)\s([\s\S]*)$/);return`<p style="margin:0 0 10px">${m?`<b>${esc(m[1])}</b> ${esc(m[2])}`:esc(x)}</p>`}).join('')}</div>`}
 function consModal(nombre,texto,ver,onOk,onNo,extra){
  modal(mh('Autorización de uso de tus datos','Solo se pide una vez · versión '+esc(ver))+consHtml(nombre,texto)+(extra||'')+
  `<label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;cursor:pointer"><input type="checkbox" id="consChk" style="width:20px;height:20px;margin-top:2px"><span>He leído y autorizo el uso de mis datos como se explica arriba.</span></label>
