@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.7 · bloque 6';
+const VERSION='4.5.8 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4080,11 +4080,19 @@ function renderLogin(){
   const b2=$('#lgBtn');if(b2){b2.disabled=false;b2.textContent='Entrar'}
  });
 }
-async function entrar(){
- const {data:perfil,error}=await SB.rpc('alm_mi_perfil');
+/* v4.5.8: al recargar la página (F5) la sesión ya existe. Si la base tarda o falla un momento,
+   se reintenta y NO se cierra la sesión: se muestra «Reintentar». Solo se cierra si la cuenta no tiene perfil. */
+function pantallaReintento(t){$('#app').innerHTML=`<div class="login"><div class="lcard card flat"><div style="text-align:center"><h2 style="margin:6px 0">Latamks Almacén</h2><p class="mut" style="line-height:1.55;padding:8px 0">${esc(t)}</p></div><button class="btn big" data-act="reEntrar" style="width:100%">Reintentar</button><button class="btn ghost" data-act="logout" style="width:100%;margin-top:10px">Cerrar sesión</button></div></div>`}
+ACT.reEntrar=async()=>{$('#app').innerHTML=`<div class="login"><div class="lcard card flat"><p class="mut" style="text-align:center;padding:14px 0">Cargando…</p></div></div>`;if(!(await entrar(true)))render()};
+async function entrar(auto){
+ let perfil=null,error=null;
+ for(let i=0;i<(auto?3:1);i++){let r;try{r=await SB.rpc('alm_mi_perfil')}catch(e){r={data:null,error:e}}perfil=r.data;error=r.error;if(!error)break;await new Promise(z=>setTimeout(z,1500))}
  window.SB_MSG='';
+ if(auto&&error){pantallaReintento(esRed(error)?'No hay conexión con el servidor. Tu sesión sigue abierta: revisa el internet y toca «Reintentar».':'El servidor no respondió. Tu sesión sigue abierta: toca «Reintentar».');return true}
  if(error||!perfil){await SB.auth.signOut();window.SB_MSG=error&&esRed(error)?'No hay conexión con el servidor. Revisa el internet e intenta de nuevo.':MSG_CRED;return false}
- try{await cargarDatos()}catch(err){console.error(err);await SB.auth.signOut();window.SB_MSG='No se pudieron leer los datos. Intenta de nuevo en un momento.';return false}
+ let fallo=null;for(let i=0;i<(auto?3:1);i++){try{await cargarDatos();fallo=null;break}catch(err){console.error(err);fallo=err;await new Promise(z=>setTimeout(z,1500))}}
+ if(fallo){if(auto){pantallaReintento('No se pudieron leer los datos. Tu sesión sigue abierta: toca «Reintentar».');return true}
+  await SB.auth.signOut();window.SB_MSG='No se pudieron leer los datos. Intenta de nuevo en un momento.';return false}
  U.user=S.users.find(x=>x.email===perfil.email)||{email:perfil.email,nombre:perfil.nombre,rol:perfil.rol,activo:true};
  marcarActividad();
  if(location.hash==='#qr'){U.kiosk=true;Object.assign(K,{step:1,tec:null,proy:null,tipo:null,sel:{},sec:null,q:''})}
@@ -4107,7 +4115,7 @@ U.kiosk=false;U.user=null;render();
  try{
   if(sesionVencida())await SB.auth.signOut();
   const {data}=await SB.auth.getSession();
-  if(data&&data.session){window.SB_LISTO=true;if(await entrar())return}
+  if(data&&data.session){window.SB_LISTO=true;if(await entrar(true))return}
  }catch(e){console.error(e)}
  window.SB_LISTO=true;U.user=null;U.kiosk=false;render();
 })();
@@ -5692,6 +5700,39 @@ new MutationObserver(()=>{if(U.user&&U.view==='mat'){scBoton();scMarcar()}}).obs
  if(i&&!i.disabled&&esInterno(m)){const nv=i.value===''?0:+i.value;if(!(nv>=0)){toast('El valor unitario no es válido.','er');return}
   if(nv!==(m.costo||0)){try{const {error}=await SB.rpc('alm_material_valor',{p_cod:v,p_valor:nv});if(error)throw error}catch(e){toast(sbErr(e),'er');return}}}
  return _se(v,el)}}
+
+/* ================= v4.5.8 · Botón «Actualizar» y aviso de novedades =================
+   - Botón ⟳ en la barra de arriba: vuelve a leer los datos de la base sin cerrar la sesión (en vez de F5).
+   - Cada minuto, con la app a la vista, revisa con una consulta mínima (solo conteos) si llegaron
+     solicitudes, devoluciones, daños o correcciones del BOM nuevas. Si llegaron, actualiza sola
+     (o avisa si hay una ventana abierta, para no borrar lo que se está escribiendo).
+   - Al volver a la app después de 5 minutos en otra ventana, también actualiza. */
+let ACTZ={ult:Date.now(),base:null,corriendo:false};
+document.head.insertAdjacentHTML('beforeend',`<style>@keyframes actzGiro{to{transform:rotate(360deg)}}.ib.actz-on svg{animation:actzGiro .8s linear infinite}</style>`);
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);ACTZ.ult=Date.now();return r}}
+const actzModal=()=>{const m=$('#modal');return!!(m&&m.classList.contains('open'))};
+async function actzRefrescar(silencio){if(ACTZ.corriendo||!U.user)return false;ACTZ.corriendo=true;const b=$('[data-act="refrescar"]');if(b){b.classList.add('actz-on');b.disabled=true}
+ try{await cargarDatos();rerender();if(!silencio)toast('Datos actualizados · '+nowHM(),'ok');return true}
+ catch(e){toast('No se pudo actualizar: '+sbErr(e),'er');return false}
+ finally{ACTZ.corriendo=false;const b2=$('[data-act="refrescar"]');if(b2){b2.classList.remove('actz-on');b2.disabled=false}}}
+ACT.refrescar=()=>{if(actzModal()){toast('Cierra la ventana abierta y vuelve a tocar «Actualizar».','wa');return}actzRefrescar(false)};
+/* Botón en la barra de arriba, antes del sonido */
+function actzBoton(){if(!U.user||U.kiosk)return;const s=$('header [data-act="sound"]');if(!s||$('header [data-act="refrescar"]'))return;
+ const b=document.createElement('button');b.className='ib';b.dataset.act='refrescar';b.dataset.tip='Actualizar datos';b.setAttribute('aria-label','Actualizar datos');b.innerHTML=icon('refresh',18);s.parentNode.insertBefore(b,s)}
+new MutationObserver(actzBoton).observe(document.body,{childList:true,subtree:true});
+/* Conteos mínimos para saber si llegó algo nuevo */
+const ACTZ_T=[['alm_solicitudes','solicitud','solicitudes'],['alm_devoluciones','devolución','devoluciones'],['alm_danos','reporte de daño o pérdida','reportes de daño o pérdida'],['alm_bom_correcciones','corrección del BOM','correcciones del BOM']];
+async function actzConteos(){const o={};for(const [t] of ACTZ_T){const r=await SB.from(t).select('id',{count:'exact',head:true});if(r&&r.error)throw r.error;o[t]=r&&typeof r.count==='number'?r.count:((r&&r.data)||[]).length}return o}
+async function actzRevisar(){if(!SB||!U.user||U.kiosk||ACTZ.corriendo||document.visibilityState!=='visible')return;
+ let c;try{c=await actzConteos()}catch(e){return}
+ const quien=U.user.email;if(!ACTZ.base||ACTZ.quien!==quien){ACTZ.base=c;ACTZ.quien=quien;return}
+ const nuevos=ACTZ_T.filter(([t])=>c[t]>ACTZ.base[t]).map(([t,n1,n2])=>{const k=c[t]-ACTZ.base[t];return k+' '+(k>1?n2:n1)});
+ ACTZ.base=c;if(!nuevos.length)return;
+ if(U.sound)try{if(typeof beep==='function')beep()}catch(e){}
+ if(actzModal()){toast('Llegó: '+nuevos.join(', ')+'. Toca ⟳ «Actualizar» cuando cierres la ventana.','wa');return}
+ if(await actzRefrescar(true))toast('Llegó: '+nuevos.join(', ')+'. Ya está en pantalla.','ok')}
+setInterval(actzRevisar,60000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&U.user&&!U.kiosk&&!actzModal()&&Date.now()-ACTZ.ult>5*60000)actzRefrescar(true)});
 
 </script>
 </body>
