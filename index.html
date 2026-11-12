@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.6.0 · bloque 6';
+const VERSION='4.6.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -5840,10 +5840,11 @@ document.head.insertAdjacentHTML('beforeend',`<style>
    auxalmacen@) o Gerencia, desde el PC, la tablet o el celular. Novedades: sobrantes, faltantes y material dañado
    o no conforme. Firmas con el dedo. PDF igual al formato en papel (la «Decisión de gerencia» queda en blanco para
    firmar a mano), imprimir y enviar por correo a almacen@latamks.com. No mueve inventario (la entrada es la EA). */
-let RECS=[],R=null;
+let RECS=[],R=null,PROVS=[],OCNIT={};
 const REC_CORREO='almacen@latamks.com';
 const REC_ED=()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
 {const _cd=cargarDatos;cargarDatos=async function(){await _cd.apply(this,arguments);if(KQ&&KQ.on&&!U.user)return;
+ try{const [pv,on]=await Promise.all([leerTodo('alm_proveedores','nit,nombre','nombre'),leerTodo('alm_ordenes_compra','id,nit','id')]);PROVS=pv||[];OCNIT={};(on||[]).forEach(o=>{if(o.nit)OCNIT[o.id]=o.nit})}catch(e){PROVS=[];OCNIT={}}
  try{RECS=(await leerTodo('alm_recibos','id,fecha,hora_llegada,hora_ini,hora_fin,proveedor,nit,facturas,oc,remision,placa,conductor,despacho,fmm,grua,sobrantes,faltantes,danos,resultado,observaciones,realizo,reviso,estado,enviado_en,enviado_por,anulado_motivo,usuario,creado_en','id')).sort((a,b)=>b.id.localeCompare(a.id))}catch(e){RECS=[]}}}
 /* Menú: después de «Entradas de almacén» */
 (()=>{if(NAV.some(n=>n.id==='rec'))return;const i=NAV.findIndex(n=>n.id==='ea');const ea=NAV[i]||{};
@@ -5897,23 +5898,21 @@ function recFilas(s){const [k]=SEC[s];const L=R[k];const dl='recCods';
 function recFirma(k,t){const f=R[k];return`<div class="recfirma"><div class="lb">${t}</div><div class="three">${rIn(k+'.nombre','Nombre')}${rIn(k+'.cargo','Cargo')}${rIn(k+'.fecha','Fecha','date')}</div>
  <div class="recpad"><canvas id="pad_${k}" width="900" height="240" aria-label="Firma: ${t}"></canvas><span class="recpad-h" id="padh_${k}" style="${f.firma?'display:none':''}">Firme aquí con el dedo o el mouse</span></div>
  <button class="btn link sm" data-act="recFirmaBorrar" data-v="${k}">Borrar firma</button></div>`}
-function recForm(){const ocs=S.ocs.filter(o=>o.estado!=='Anulada');const provs=[...new Set([...RECS.map(r=>r.proveedor),...S.ocs.map(o=>o.prov)].filter(Boolean))];
+function recForm(){const ocs=S.ocs.filter(o=>o.estado!=='Anulada');const provs=[...new Set([...PROVS.map(p=>p.nombre),...RECS.map(r=>r.proveedor),...S.ocs.map(o=>o.prov)].filter(Boolean))];
  const codsOc=R.oc&&S.ocs.find(o=>o.id===R.oc)?S.ocs.find(o=>o.id===R.oc).lineas.map(l=>l.cod):[];
  const cods=[...new Set([...codsOc,...S.mats.map(m=>m.cod)])];
  const g=(k,v)=>`<label class="recck"><input type="radio" name="rf_${k}" data-rk="${k}" value="${v}" ${R[k]===v?'checked':''}> ${v}</label>`;
- return`<datalist id="recCods">${cods.slice(0,1500).map(c=>`<option value="${esc(c)}">${esc((MI[c]||{}).desc||'')}</option>`).join('')}</datalist><datalist id="recProvs">${provs.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+ return`<datalist id="recCods">${cods.slice(0,1500).map(c=>`<option value="${esc(c)}">${esc((MI[c]||{}).desc||'')}</option>`).join('')}</datalist><datalist id="recProvs">${provs.map(p=>`<option value="${esc(p)}">`).join('')}</datalist><datalist id="recNits">${PROVS.map(p=>`<option value="${esc(p.nit)}">${esc(p.nombre)}</option>`).join('')}</datalist>
  <div class="card recdoc"><div class="rechd"><div><h2>FORMATO DE VERIFICACIÓN Y RECIBO DE MERCANCÍA</h2><p>Reporte de sobrantes, faltantes y material dañado o no conforme</p><p class="sub">LATAMKS S.A.S. · NIT 901.570.202-4 · Zona Franca La Cayena, Barranquilla</p></div>
   <div class="recmeta"><span>Código: FR-ALM-001 · Versión: 01 · Área: Almacén</span><b>${R.id?esc(R.id):'Consecutivo al guardar'}</b></div></div>
- <details class="recinst"><summary>Instrucciones</summary><ol><li>Diligencie un formato por cada vehículo o despacho recibido.</li><li>Compare lo descargado contra la factura y la orden de compra. Las piezas grandes (tapas, rompeolas, láminas) se cuentan con puente grúa.</li><li>Registre solo las novedades: sobrantes (2), faltantes (3) y material dañado o no conforme (4). Si todo llegó bien, marque «Todo llegó conforme» en la sección 5.</li><li>El material sobrante o dañado se separa y se marca «PENDIENTE DOCUMENTO» hasta que gerencia decida.</li><li>Envíe el formato por correo a gerencia el mismo día y archive el original con la factura, la orden de compra y el FMM.</li></ol></details></div>
+ <details class="recinst"><summary>Instrucciones</summary><ol><li>Diligencie un formato por cada vehículo o despacho recibido.</li><li>Compare lo descargado contra la factura y la orden de compra.</li><li>Registre solo las novedades: sobrantes (2), faltantes (3) y material dañado o no conforme (4). Si todo llegó bien, marque «Todo llegó conforme» en la sección 5.</li><li>El material sobrante o dañado se separa y se marca «PENDIENTE DOCUMENTO» hasta que gerencia decida.</li><li>Envíe el formato por correo a gerencia el mismo día y archive el original con la factura, la orden de compra y el FMM.</li></ol></details></div>
  <div class="card"><div class="recsec"><span>1</span>Datos del recibo</div>
   <div class="fld"><label for="rf_ocSel">Orden de compra de la app (opcional)</label><select class="sel" id="rf_ocSel" data-act-change="recOc"><option value="">— Sin OC en la app (escribe el número abajo) —</option>${ocs.map(o=>`<option value="${esc(o.id)}" ${R.oc===o.id?'selected':''}>${esc(o.id)} · ${esc(o.prov)}${o.ref?' · '+esc(o.ref):''} · ${esc(o.estado)}</option>`).join('')}</select></div>
-  <div class="two">${rIn('fecha','Fecha de recibo','date')}${rIn('proveedor','Proveedor','text','list="recProvs" autocomplete="off"')}
-  ${rIn('hora_llegada','Hora de llegada','time')}${rIn('nit','NIT del proveedor')}
-  ${rIn('hora_ini','Hora inicio verificación','time')}${rIn('facturas','N.º de factura(s)')}
-  ${rIn('hora_fin','Hora fin verificación','time')}${rIn('oc','N.º de orden de compra')}
-  ${rIn('placa','Placa del vehículo')}<div class="fld"><label>¿Llegó remisión / lista de empaque?</label><div class="recrad">${g('remSi','Sí')}${g('remSi','No')}<input class="inp" data-rk="remNum" placeholder="N.º remisión" value="${esc(R.remNum||'')}" style="max-width:170px"></div></div>
-  ${rIn('conductor','Nombre del conductor')}${rIn('fmm','N.º de FMM (Appolo)')}
-  ${rIn('despacho','N.º de despacho del proveedor')}<div class="fld"><label>¿Se usó puente grúa?</label><div class="recrad">${g('grua','Sí')}${g('grua','No')}${g('grua','No aplica')}</div></div></div></div>
+  <div class="two">${rIn('fecha','Fecha de recibo','date')}${rIn('hora_llegada','Hora de llegada','time')}
+  <div class="fld"><label for="rf_nit">NIT del proveedor</label><input class="inp" id="rf_nit" data-rk="nit" list="recNits" autocomplete="off" inputmode="numeric" placeholder="Escribe el NIT o elígelo" value="${esc(R.nit||'')}"><span class="sub" id="rf_nitInfo">${recNitInfo()}</span></div>
+  ${rIn('proveedor','Proveedor','text','list="recProvs" autocomplete="off" placeholder="Escribe el nombre o elígelo"')}
+  ${rIn('facturas','N.º de factura(s)')}${rIn('oc','N.º de orden de compra')}
+  ${rIn('placa','Placa del vehículo')}${rIn('fmm','N.º de FMM (Appolo)')}</div></div>
  ${['s','f','d'].map((s,j)=>`<div class="card"><div class="recsec"><span>${j+2}</span>${SEC[s][1]}<em>${s==='s'?'Llegó más de lo facturado o sin factura':s==='f'?'Facturado pero no llegó':''}</em></div>
   ${s==='s'?'<p class="sub" style="margin:0 0 10px">El material sobrante se separa y se marca «PENDIENTE DOCUMENTO». No se entrega a producción hasta que gerencia decida.</p>':''}${recFilas(s)}
   <button class="btn ghost sm" data-act="recAdd" data-v="${s}">${icon('plus',14)}Agregar ${s==='s'?'sobrante':s==='f'?'faltante':'material dañado'}</button></div>`).join('')}
@@ -5938,11 +5937,18 @@ ACT.recAdd=v=>{recLeer();const k=SEC[v][0];R[k].push(v==='s'?{cod:'',desc:'',q:'
  setTimeout(()=>{const e=$(`[data-rs="${v}|${R[k].length-1}|cod"]`);if(e)e.focus()},40)};
 ACT.recDel=v=>{recLeer();const [s,i]=v.split('|');R[SEC[s][0]].splice(+i,1);rerender()};
 ACT.recFirmaBorrar=v=>{R[v].firma='';const c=$('#pad_'+v);if(c)c.getContext('2d').clearRect(0,0,c.width,c.height);const h=$('#padh_'+v);if(h)h.style.display=''};
-/* Autocompletar: código → descripción; proveedor → NIT; OC → proveedor y número */
+/* Autocompletar: código → descripción; NIT ↔ proveedor (proveedores creados en la OC); OC → proveedor, NIT y número */
+const nitNorm=v=>String(v||'').toUpperCase().replace(/[^0-9A-Z-]/g,'').slice(0,20);
+const provPorNit=v=>{const n=nitNorm(v);return n?PROVS.find(p=>p.nit===n||p.nit.replace(/-/g,'')===n.replace(/-/g,'')):null};
+const provPorNom=v=>{const n=nrmH(v);return n?PROVS.find(p=>nrmH(p.nombre)===n):null};
+function recNitInfo(){if(!R)return'';const p=provPorNit(R.nit);return !R.nit?'':p?'Proveedor registrado: '+esc(p.nombre):'NIT nuevo: el proveedor quedará registrado al guardar'}
+function recNitSync(t){if(t.id==='rf_nit'){const p=provPorNit(t.value);const pv=$('#rf_proveedor');if(p&&pv)pv.value=p.nombre;const i=$('#rf_nitInfo');if(i){R.nit=t.value;i.innerHTML=recNitInfo()}}
+ if(t.id==='rf_proveedor'){const p=provPorNom(t.value);const nt=$('#rf_nit');if(p&&nt){nt.value=p.nit;R.nit=p.nit;const i=$('#rf_nitInfo');if(i)i.innerHTML=recNitInfo()}}}
+document.addEventListener('input',e=>{if(R&&U.view==='rec'&&(e.target.id==='rf_nit'||e.target.id==='rf_proveedor')){const t=e.target;if(t.id==='rf_nit'?provPorNit(t.value):provPorNom(t.value))recNitSync(t)}},true);
 document.addEventListener('change',e=>{if(!R||U.view!=='rec')return;const t=e.target;
- if(t.id==='rf_ocSel'){recLeer();const o=S.ocs.find(x=>x.id===t.value);if(o){R.oc=o.id;R.proveedor=o.prov;const prev=RECS.find(r=>r.proveedor===o.prov&&r.nit);if(prev)R.nit=prev.nit}rerender();return}
+ if(t.id==='rf_ocSel'){recLeer();const o=S.ocs.find(x=>x.id===t.value);if(o){R.oc=o.ref||o.id;R.proveedor=o.prov;const nit=OCNIT[o.id]||((provPorNom(o.prov)||{}).nit)||'';if(nit)R.nit=nit}rerender();return}
  if(t.dataset.rs&&t.dataset.rs.endsWith('|cod')){const m=MI[t.value.trim()];if(m){const [s,i]=t.dataset.rs.split('|');const d=$(`[data-rs="${s}|${i}|desc"]`);if(d&&!d.value)d.value=m.desc}}
- if(t.id==='rf_proveedor'&&!($('#rf_nit')||{}).value){const prev=RECS.find(r=>r.proveedor===t.value.trim().toUpperCase()&&r.nit);if(prev)$('#rf_nit').value=prev.nit}},true);
+ if(t.id==='rf_nit'||t.id==='rf_proveedor')recNitSync(t)},true);
 /* Firmas: lienzo con el dedo o el mouse */
 function recPads(){['realizo','reviso'].forEach(k=>{const c=$('#pad_'+k);if(!c||c.dataset.ok)return;c.dataset.ok='1';const x=c.getContext('2d');x.lineWidth=3.2;x.lineCap='round';x.lineJoin='round';x.strokeStyle='#14213d';
  if(R&&R[k].firma){const im=new Image();im.onload=()=>x.drawImage(im,0,0,c.width,c.height);im.src=R[k].firma}
@@ -5988,9 +5994,7 @@ function recPdf(r){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',forma
  sec(1,'DATOS DEL RECIBO');
  tabla(['Dato','Valor','Dato','Valor'],[
   ['Fecha de recibo',fd(r.fecha),'Proveedor',r.proveedor],['Hora de llegada',r.hora_llegada||'','NIT del proveedor',r.nit||''],
-  ['Hora inicio verificación',r.hora_ini||'','N.º de factura(s)',r.facturas||''],['Hora fin verificación',r.hora_fin||'','N.º de orden de compra',r.oc||''],
-  ['Placa del vehículo',r.placa||'','¿Llegó remisión / lista de empaque?',r.remision?(r.remision==='No'?'[X] No':'[X] Sí'+(r.remision!=='Sí'?' N.º '+r.remision:'')):'[  ] Sí   [  ] No'],
-  ['Nombre del conductor',r.conductor||'','N.º de FMM (Appolo)',r.fmm||''],['N.º de despacho del proveedor',r.despacho||'','¿Se usó puente grúa?',['Sí','No','No aplica'].map(o=>ck(r.grua,o)).join('  ')]],
+  ['N.º de factura(s)',r.facturas||'','N.º de orden de compra',r.oc||''],['Placa del vehículo',r.placa||'','N.º de FMM (Appolo)',r.fmm||'']],
   {0:{fontStyle:'bold',cellWidth:38},2:{fontStyle:'bold',cellWidth:44}});
  sec(2,'SOBRANTES','Llegó más de lo facturado o sin factura');
  d.setFontSize(7.5);d.setTextColor(...gris);d.text('El material sobrante se separa y se marca «PENDIENTE DOCUMENTO». No se entrega a producción hasta que gerencia decida.',X,y-1);y+=2;d.setTextColor(20);
@@ -6040,6 +6044,16 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .recpad-h{position:absolute;inset:0;display:grid;place-items:center;color:#9aa3b8;pointer-events:none;font-size:14px}
 .recbar{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;margin-top:6px;background:var(--card,#fff);border:1px solid var(--bd,rgba(36,52,107,.15));border-radius:16px;box-shadow:0 -6px 20px rgba(20,33,61,.08)}
 </style>`);
+
+/* ---------- Orden de compra: el proveedor queda creado con su NIT (SQL 23) ---------- */
+{const _no=newOC;newOC=function(pre){_no(pre);const pv=$('#ocProv');if(!pv||$('#ocNit'))return;
+ pv.closest('.fld').insertAdjacentHTML('afterend',`<div class="fld"><label for="ocNit">NIT del proveedor</label><input class="inp" id="ocNit" list="ocNits" autocomplete="off" inputmode="numeric" placeholder="Ej.: 800123456-7"><datalist id="ocNits">${PROVS.map(p=>`<option value="${esc(p.nit)}">${esc(p.nombre)}</option>`).join('')}</datalist><span class="sub" id="ocNitInfo">Con el NIT, el proveedor queda registrado para el recibo de mercancía.</span></div>`);
+ const nt=$('#ocNit'),inf=$('#ocNitInfo');
+ const sync=src=>{if(src==='nit'){const p=provPorNit(nt.value);if(p)pv.value=p.nombre;inf.textContent=!nt.value?'Con el NIT, el proveedor queda registrado para el recibo de mercancía.':p?'Proveedor registrado: '+p.nombre:'NIT nuevo: el proveedor quedará registrado con esta OC.'}
+  else{const p=provPorNom(pv.value);if(p){nt.value=p.nit;inf.textContent='Proveedor registrado: '+p.nombre}}};
+ nt.addEventListener('input',()=>sync('nit'));nt.addEventListener('change',()=>sync('nit'));pv.addEventListener('change',()=>sync('nom'));pv.addEventListener('input',()=>{if(provPorNom(pv.value))sync('nom')})}}
+{const _so=ACT.saveOC;ACT.saveOC=async(v,el)=>{const nt=$('#ocNit');if(nt&&nitNorm(nt.value).length<5){toast('Escribe el NIT del proveedor (así queda registrado para el recibo de mercancía).','er');nt.focus();return}return _so(v,el)}}
+{const _rpc=SB.rpc.bind(SB);SB.rpc=function(fn,args,o){if(fn==='alm_oc_crear'&&args&&args.p&&!args.p.nit){const nt=$('#ocNit');if(nt&&nt.value)args=Object.assign({},args,{p:Object.assign({},args.p,{nit:nt.value})})}return _rpc(fn,args,o)}}
 
 </script>
 </body>
