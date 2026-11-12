@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.5.10 · bloque 6';
+const VERSION='4.6.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -5833,6 +5833,212 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .navq input::-webkit-search-cancel-button{filter:invert(1);opacity:.6}
 .navq kbd{margin-right:10px;font-family:inherit;font-size:11px;line-height:1;padding:3px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.7);white-space:nowrap}
 .app.col .navq,.side.col .navq,body.col .navq{display:none}
+</style>`);
+
+/* ================= v4.6.0 · FR-ALM-001 · Verificación y recibo de mercancía (SQL 22, decisión 90) =================
+   Un formato por vehículo o despacho (Romarco u otro proveedor). Lo llenan el Auxiliar (Ronald o Deivis, con
+   auxalmacen@) o Gerencia, desde el PC, la tablet o el celular. Novedades: sobrantes, faltantes y material dañado
+   o no conforme. Firmas con el dedo. PDF igual al formato en papel (la «Decisión de gerencia» queda en blanco para
+   firmar a mano), imprimir y enviar por correo a almacen@latamks.com. No mueve inventario (la entrada es la EA). */
+let RECS=[],R=null;
+const REC_CORREO='almacen@latamks.com';
+const REC_ED=()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd.apply(this,arguments);if(KQ&&KQ.on&&!U.user)return;
+ try{RECS=(await leerTodo('alm_recibos','id,fecha,hora_llegada,hora_ini,hora_fin,proveedor,nit,facturas,oc,remision,placa,conductor,despacho,fmm,grua,sobrantes,faltantes,danos,resultado,observaciones,realizo,reviso,estado,enviado_en,enviado_por,anulado_motivo,usuario,creado_en','id')).sort((a,b)=>b.id.localeCompare(a.id))}catch(e){RECS=[]}}}
+/* Menú: después de «Entradas de almacén» */
+(()=>{if(NAV.some(n=>n.id==='rec'))return;const i=NAV.findIndex(n=>n.id==='ea');const ea=NAV[i]||{};
+ NAV.splice(i+1,0,{id:'rec',t:'Recibo de mercancía',ic:'box',r:ea.r||['Gerencia','Auxiliar','Producción','Calidad','Compras','Diseño','Auditoría','Inventario'],par:ea.par});
+ if(typeof NAVQ_CLAVES!=='undefined')NAVQ_CLAVES.rec='recibo mercancia fr-alm-001 formato novedades sobrantes faltantes danado no conforme romarco vehiculo mula despacho placa conductor'})();
+if(typeof CRUMB!=='undefined')try{CRUMB.rec='Compras y entradas'}catch(e){}
+
+const recVacio=()=>({id:'',fecha:HOY,hora_llegada:nowHM(),hora_ini:'',hora_fin:'',proveedor:'',nit:'',facturas:'',oc:'',remSi:'',remNum:'',placa:'',conductor:'',despacho:'',fmm:'',grua:'',
+ sobrantes:[],faltantes:[],danos:[],resultado:'Conforme',observaciones:'',realizo:{nombre:'',cargo:'Auxiliar de almacén',fecha:HOY,firma:''},reviso:{nombre:'',cargo:'Jefe de almacén',fecha:'',firma:''}});
+const recDeDb=r=>({id:r.id,fecha:r.fecha,hora_llegada:r.hora_llegada,hora_ini:r.hora_ini,hora_fin:r.hora_fin,proveedor:r.proveedor,nit:r.nit,facturas:r.facturas,oc:r.oc,
+ remSi:r.remision?(r.remision==='No'?'No':'Sí'):'',remNum:r.remision&&r.remision!=='No'&&r.remision!=='Sí'?r.remision:'',placa:r.placa,conductor:r.conductor,despacho:r.despacho,fmm:r.fmm,grua:r.grua,
+ sobrantes:(r.sobrantes||[]).map(x=>({...x})),faltantes:(r.faltantes||[]).map(x=>({...x})),danos:(r.danos||[]).map(x=>({...x})),resultado:r.resultado,observaciones:r.observaciones,
+ realizo:Object.assign({nombre:'',cargo:'',fecha:'',firma:''},r.realizo||{}),reviso:Object.assign({nombre:'',cargo:'',fecha:'',firma:''},r.reviso||{})});
+const recNov=r=>(r.sobrantes||[]).length+(r.faltantes||[]).length+(r.danos||[]).length;
+const SEC={s:['sobrantes','Sobrantes'],f:['faltantes','Faltantes'],d:['danos','Material dañado o no conforme']};
+
+/* ---------- Lista ---------- */
+function recLista(){const f=U.f;const q=nrmH(f.rcQ||'');const mes=HOY.slice(0,7);
+ const L=RECS.filter(r=>(!f.rcE||r.estado===f.rcE)&&(!q||nrmH([r.id,r.proveedor,r.placa,r.facturas,r.oc,r.conductor].join(' ')).includes(q)));
+ const M_=RECS.filter(r=>r.estado!=='Anulado'&&String(r.fecha).startsWith(mes));
+ regT('rec','Recibos de mercancía (FR-ALM-001)',['Consecutivo','Fecha','Proveedor','Placa','Factura(s)','OC','Resultado','Sobrantes','Faltantes','Dañados','Estado','Enviado','Realizó'],
+  L.map(r=>[r.id,r.fecha,r.proveedor,r.placa,r.facturas,r.oc,r.resultado,(r.sobrantes||[]).length,(r.faltantes||[]).length,(r.danos||[]).length,r.estado,r.enviado_en?String(r.enviado_en).slice(0,16).replace('T',' '):'',(r.realizo||{}).nombre||r.usuario]));
+ const bd=r=>r.estado==='Anulado'?'<span class="bd">Anulado</span>':r.estado==='Enviado'?'<span class="bd ok">Enviado</span>':'<span class="bd wa">Borrador</span>';
+ return`<div class="fbar"><input class="inp" data-f="rcQ" placeholder="Buscar consecutivo, proveedor, placa, factura u OC" value="${esc(f.rcQ||'')}" style="max-width:360px">
+ <select class="sel" data-f="rcE" style="max-width:200px"><option value="">Todos los estados</option>${['Borrador','Enviado','Anulado'].map(x=>`<option ${f.rcE===x?'selected':''}>${x}</option>`).join('')}</select>
+ <div class="sp"></div>${xbtns('rec')}<button class="btn" data-act="recNew" ${REC_ED()?'':'disabled title="Solo el Auxiliar o Gerencia"'}>${icon('plus',16)}Nuevo recibo (FR-ALM-001)</button></div>
+ <div class="kpis" style="margin-bottom:14px">
+  <div class="kpi"><div><small>Recibos este mes</small><b>${M_.length}</b><span class="sub">un formato por vehículo</span></div></div>
+  <div class="kpi"><div><small>Con diferencias</small><b>${M_.filter(r=>r.resultado==='Con diferencias').length}</b><span class="sub">sobrantes, faltantes o daños</span></div></div>
+  <div class="kpi"><div><small>Por enviar</small><b>${RECS.filter(r=>r.estado==='Borrador').length}</b><span class="sub">borradores sin enviar a gerencia</span></div></div></div>
+ <div class="card"><div class="ch"><div><h3>Formato de verificación y recibo de mercancía</h3><p>FR-ALM-001 · Versión 01. Registra solo las novedades del vehículo: sobrantes, faltantes y material dañado o no conforme. No mueve inventario: la entrada sigue siendo la EA.</p></div></div>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Consecutivo</th><th>Fecha</th><th>Proveedor</th><th>Placa</th><th>Factura · OC</th><th>Resultado</th><th>Estado</th><th></th></tr></thead><tbody>${L.map(r=>`<tr>
+  <td class="nm"><b>${esc(r.id)}</b><div class="sub">${esc((r.realizo||{}).nombre||r.usuario||'')}</div></td><td data-l="Fecha">${fd(r.fecha)}${r.hora_llegada?' · '+esc(r.hora_llegada):''}</td>
+  <td data-l="Proveedor">${esc(r.proveedor)}</td><td data-l="Placa">${esc(r.placa||'—')}</td><td data-l="Factura · OC">${esc(r.facturas||'—')}<div class="sub">${esc(r.oc||'')}</div></td>
+  <td data-l="Resultado">${r.resultado==='Conforme'?'<span class="bd ok">Conforme</span>':`<span class="bd er">Con diferencias</span><div class="sub">${(r.sobrantes||[]).length} sobr. · ${(r.faltantes||[]).length} falt. · ${(r.danos||[]).length} dañ.</div>`}</td>
+  <td data-l="Estado">${bd(r)}${r.estado==='Enviado'&&r.enviado_en?`<div class="sub">${esc(String(r.enviado_en).slice(0,16).replace('T',' '))}</div>`:''}</td>
+  <td><div class="acts" style="justify-content:flex-end;flex-wrap:nowrap">${r.estado==='Borrador'?`<button class="btn ghost sm" data-act="recEdit" data-v="${esc(r.id)}" ${REC_ED()?'':'disabled'}>${icon('edit',14)}Editar</button>`:''}
+   <button class="btn ghost sm" data-act="recPrint" data-v="${esc(r.id)}">${icon('pdf',14)}PDF</button>${r.estado!=='Anulado'?`<button class="btn sm" data-act="recSend" data-v="${esc(r.id)}" ${REC_ED()?'':'disabled'}>${icon('up',14)}Enviar</button>`:''}
+   ${r.estado!=='Anulado'&&U.user.rol==='Gerencia'?`<button class="ib" data-act="recAnular" data-v="${esc(r.id)}" data-tip="Anular">${icon('trash',15)}</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`
+ :`<p class="sub">${RECS.length?'Ningún recibo con ese filtro.':'Todavía no hay recibos. Toca «Nuevo recibo (FR-ALM-001)» cuando llegue un vehículo.'}</p>`}</div>`}
+
+/* ---------- Formulario ---------- */
+const recGet=k=>k.includes('.')?(R[k.split('.')[0]]||{})[k.split('.')[1]]:R[k];
+const rIn=(k,lbl,typ,extra)=>`<div class="fld"><label for="rf_${k}">${lbl}</label><input class="inp" id="rf_${k}" data-rk="${k}" type="${typ||'text'}" value="${esc(recGet(k)||'')}" ${extra||''}></div>`;
+function recFilas(s){const [k]=SEC[s];const L=R[k];const dl='recCods';
+ const cols=s==='s'?['Código','Descripción','Cant. sobrante','¿Tiene OC?','Ubicación donde quedó']:s==='f'?['Código','Descripción','Cant. faltante','Factura afectada']:['Código','Descripción','Cantidad','Tipo de daño','¿Se tomó foto?'];
+ const inp=(i,c,ph,typ,w)=>`<input class="inp" data-rs="${s}|${i}|${c}" ${typ?`type="${typ}" min="0" step="any" inputmode="decimal"`:''} placeholder="${ph}" value="${esc(L[i][c]==null?'':L[i][c])}" ${c==='cod'?`list="${dl}"`:''} style="${w||''}">`;
+ const sn=(i,c)=>`<select class="sel" data-rs="${s}|${i}|${c}"><option value=""></option>${['Sí','No'].map(x=>`<option ${L[i][c]===x?'selected':''}>${x}</option>`).join('')}</select>`;
+ return L.length?`<div class="recf">${L.map((r,i)=>`<div class="recr recr-${s}"><span class="recn">${i+1}</span>${inp(i,'cod','Código')}${inp(i,'desc','Descripción')}${inp(i,'q',cols[2],'number')}${s==='s'?sn(i,'tiene_oc')+inp(i,'ub','Ubicación'):s==='f'?inp(i,'factura','Factura'):inp(i,'tipo','Tipo de daño')+sn(i,'foto')}<button class="ib" data-act="recDel" data-v="${s}|${i}" aria-label="Quitar fila">${icon('trash',14)}</button></div>`).join('')}</div>`
+ :`<p class="sub" style="margin:4px 0 10px">Sin registros.</p>`}
+function recFirma(k,t){const f=R[k];return`<div class="recfirma"><div class="lb">${t}</div><div class="three">${rIn(k+'.nombre','Nombre')}${rIn(k+'.cargo','Cargo')}${rIn(k+'.fecha','Fecha','date')}</div>
+ <div class="recpad"><canvas id="pad_${k}" width="900" height="240" aria-label="Firma: ${t}"></canvas><span class="recpad-h" id="padh_${k}" style="${f.firma?'display:none':''}">Firme aquí con el dedo o el mouse</span></div>
+ <button class="btn link sm" data-act="recFirmaBorrar" data-v="${k}">Borrar firma</button></div>`}
+function recForm(){const ocs=S.ocs.filter(o=>o.estado!=='Anulada');const provs=[...new Set([...RECS.map(r=>r.proveedor),...S.ocs.map(o=>o.prov)].filter(Boolean))];
+ const codsOc=R.oc&&S.ocs.find(o=>o.id===R.oc)?S.ocs.find(o=>o.id===R.oc).lineas.map(l=>l.cod):[];
+ const cods=[...new Set([...codsOc,...S.mats.map(m=>m.cod)])];
+ const g=(k,v)=>`<label class="recck"><input type="radio" name="rf_${k}" data-rk="${k}" value="${v}" ${R[k]===v?'checked':''}> ${v}</label>`;
+ return`<datalist id="recCods">${cods.slice(0,1500).map(c=>`<option value="${esc(c)}">${esc((MI[c]||{}).desc||'')}</option>`).join('')}</datalist><datalist id="recProvs">${provs.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
+ <div class="card recdoc"><div class="rechd"><div><h2>FORMATO DE VERIFICACIÓN Y RECIBO DE MERCANCÍA</h2><p>Reporte de sobrantes, faltantes y material dañado o no conforme</p><p class="sub">LATAMKS S.A.S. · NIT 901.570.202-4 · Zona Franca La Cayena, Barranquilla</p></div>
+  <div class="recmeta"><span>Código: FR-ALM-001 · Versión: 01 · Área: Almacén</span><b>${R.id?esc(R.id):'Consecutivo al guardar'}</b></div></div>
+ <details class="recinst"><summary>Instrucciones</summary><ol><li>Diligencie un formato por cada vehículo o despacho recibido.</li><li>Compare lo descargado contra la factura y la orden de compra. Las piezas grandes (tapas, rompeolas, láminas) se cuentan con puente grúa.</li><li>Registre solo las novedades: sobrantes (2), faltantes (3) y material dañado o no conforme (4). Si todo llegó bien, marque «Todo llegó conforme» en la sección 5.</li><li>El material sobrante o dañado se separa y se marca «PENDIENTE DOCUMENTO» hasta que gerencia decida.</li><li>Envíe el formato por correo a gerencia el mismo día y archive el original con la factura, la orden de compra y el FMM.</li></ol></details></div>
+ <div class="card"><div class="recsec"><span>1</span>Datos del recibo</div>
+  <div class="fld"><label for="rf_ocSel">Orden de compra de la app (opcional)</label><select class="sel" id="rf_ocSel" data-act-change="recOc"><option value="">— Sin OC en la app (escribe el número abajo) —</option>${ocs.map(o=>`<option value="${esc(o.id)}" ${R.oc===o.id?'selected':''}>${esc(o.id)} · ${esc(o.prov)}${o.ref?' · '+esc(o.ref):''} · ${esc(o.estado)}</option>`).join('')}</select></div>
+  <div class="two">${rIn('fecha','Fecha de recibo','date')}${rIn('proveedor','Proveedor','text','list="recProvs" autocomplete="off"')}
+  ${rIn('hora_llegada','Hora de llegada','time')}${rIn('nit','NIT del proveedor')}
+  ${rIn('hora_ini','Hora inicio verificación','time')}${rIn('facturas','N.º de factura(s)')}
+  ${rIn('hora_fin','Hora fin verificación','time')}${rIn('oc','N.º de orden de compra')}
+  ${rIn('placa','Placa del vehículo')}<div class="fld"><label>¿Llegó remisión / lista de empaque?</label><div class="recrad">${g('remSi','Sí')}${g('remSi','No')}<input class="inp" data-rk="remNum" placeholder="N.º remisión" value="${esc(R.remNum||'')}" style="max-width:170px"></div></div>
+  ${rIn('conductor','Nombre del conductor')}${rIn('fmm','N.º de FMM (Appolo)')}
+  ${rIn('despacho','N.º de despacho del proveedor')}<div class="fld"><label>¿Se usó puente grúa?</label><div class="recrad">${g('grua','Sí')}${g('grua','No')}${g('grua','No aplica')}</div></div></div></div>
+ ${['s','f','d'].map((s,j)=>`<div class="card"><div class="recsec"><span>${j+2}</span>${SEC[s][1]}<em>${s==='s'?'Llegó más de lo facturado o sin factura':s==='f'?'Facturado pero no llegó':''}</em></div>
+  ${s==='s'?'<p class="sub" style="margin:0 0 10px">El material sobrante se separa y se marca «PENDIENTE DOCUMENTO». No se entrega a producción hasta que gerencia decida.</p>':''}${recFilas(s)}
+  <button class="btn ghost sm" data-act="recAdd" data-v="${s}">${icon('plus',14)}Agregar ${s==='s'?'sobrante':s==='f'?'faltante':'material dañado'}</button></div>`).join('')}
+ <div class="card"><div class="recsec"><span>5</span>Resultado y envío a gerencia</div>
+  <div class="recres"><label class="${recNov(R)?'dis':''}"><input type="radio" name="rf_resultado" data-rk="resultado" value="Conforme" ${R.resultado==='Conforme'&&!recNov(R)?'checked':''} ${recNov(R)?'disabled':''}><b>Todo llegó conforme</b><span>Sin sobrantes, faltantes ni daños</span></label>
+  <label><input type="radio" name="rf_resultado" data-rk="resultado" value="Con diferencias" ${R.resultado==='Con diferencias'||recNov(R)?'checked':''}><b>Con diferencias</b><span>Se envía a gerencia por correo</span></label></div>
+  <div class="fld" style="margin-top:12px"><label for="rf_observaciones">Observaciones generales</label><textarea class="inp" id="rf_observaciones" data-rk="observaciones" rows="3">${esc(R.observaciones||'')}</textarea></div></div>
+ <div class="card"><div class="recsec"><span>6</span>Firmas<em>Firma con el dedo o el mouse</em></div>${recFirma('realizo','Realizó la verificación')}${recFirma('reviso','Revisó (jefe de almacén)')}</div>
+ <div class="recbar"><button class="btn ghost" data-act="recCancel">Cancelar</button><div class="sp"></div><button class="btn ghost" data-act="recSave" data-v="b">${icon('check',16)}Guardar borrador</button><button class="btn" data-act="recSave" data-v="e">${icon('up',16)}Guardar y enviar</button></div>`}
+VIEWS.rec=function(){return R?recForm():recLista()};
+/* Conservar lo escrito si la app se redibuja (botón ⟳, novedades, menú) */
+{const _r=render;render=function(){if(R&&U.view==='rec')try{recLeer()}catch(e){}return _r.apply(this,arguments)}}
+
+/* Leer el formulario antes de redibujar o guardar */
+function recLeer(){if(!R)return;$$('[data-rk]').forEach(el=>{const k=el.dataset.rk;if(el.type==='radio'){if(el.checked)recSet(k,el.value)}else recSet(k,el.value)});
+ $$('[data-rs]').forEach(el=>{const [s,i,c]=el.dataset.rs.split('|');const k=SEC[s][0];if(R[k][+i])R[k][+i][c]=c==='q'?(el.value===''?'':+el.value):el.value})}
+function recSet(k,v){if(k.includes('.')){const [a,b]=k.split('.');R[a][b]=v}else R[k]=v}
+ACT.recNew=()=>{if(!REC_ED())return;R=recVacio();const ult=RECS.find(r=>r.proveedor);if(ult){R.proveedor=ult.proveedor;R.nit=ult.nit}U.view='rec';render();window.scrollTo(0,0)};
+ACT.recEdit=v=>{const r=RECS.find(x=>x.id===v);if(!r||!REC_ED())return;R=recDeDb(r);U.view='rec';render();window.scrollTo(0,0)};
+ACT.recCancel=()=>{R=null;rerender()};
+ACT.recAdd=v=>{recLeer();const k=SEC[v][0];R[k].push(v==='s'?{cod:'',desc:'',q:'',tiene_oc:'',ub:''}:v==='f'?{cod:'',desc:'',q:'',factura:''}:{cod:'',desc:'',q:'',tipo:'',foto:''});R.resultado='Con diferencias';rerender();
+ setTimeout(()=>{const e=$(`[data-rs="${v}|${R[k].length-1}|cod"]`);if(e)e.focus()},40)};
+ACT.recDel=v=>{recLeer();const [s,i]=v.split('|');R[SEC[s][0]].splice(+i,1);rerender()};
+ACT.recFirmaBorrar=v=>{R[v].firma='';const c=$('#pad_'+v);if(c)c.getContext('2d').clearRect(0,0,c.width,c.height);const h=$('#padh_'+v);if(h)h.style.display=''};
+/* Autocompletar: código → descripción; proveedor → NIT; OC → proveedor y número */
+document.addEventListener('change',e=>{if(!R||U.view!=='rec')return;const t=e.target;
+ if(t.id==='rf_ocSel'){recLeer();const o=S.ocs.find(x=>x.id===t.value);if(o){R.oc=o.id;R.proveedor=o.prov;const prev=RECS.find(r=>r.proveedor===o.prov&&r.nit);if(prev)R.nit=prev.nit}rerender();return}
+ if(t.dataset.rs&&t.dataset.rs.endsWith('|cod')){const m=MI[t.value.trim()];if(m){const [s,i]=t.dataset.rs.split('|');const d=$(`[data-rs="${s}|${i}|desc"]`);if(d&&!d.value)d.value=m.desc}}
+ if(t.id==='rf_proveedor'&&!($('#rf_nit')||{}).value){const prev=RECS.find(r=>r.proveedor===t.value.trim().toUpperCase()&&r.nit);if(prev)$('#rf_nit').value=prev.nit}},true);
+/* Firmas: lienzo con el dedo o el mouse */
+function recPads(){['realizo','reviso'].forEach(k=>{const c=$('#pad_'+k);if(!c||c.dataset.ok)return;c.dataset.ok='1';const x=c.getContext('2d');x.lineWidth=3.2;x.lineCap='round';x.lineJoin='round';x.strokeStyle='#14213d';
+ if(R&&R[k].firma){const im=new Image();im.onload=()=>x.drawImage(im,0,0,c.width,c.height);im.src=R[k].firma}
+ let dib=false,lx=0,ly=0;const pos=e=>{const b=c.getBoundingClientRect();return[(e.clientX-b.left)*c.width/b.width,(e.clientY-b.top)*c.height/b.height]};
+ c.addEventListener('pointerdown',e=>{dib=true;[lx,ly]=pos(e);c.setPointerCapture(e.pointerId);const h=$('#padh_'+k);if(h)h.style.display='none';e.preventDefault()});
+ c.addEventListener('pointermove',e=>{if(!dib)return;const [nx,ny]=pos(e);x.beginPath();x.moveTo(lx,ly);x.lineTo(nx,ny);x.stroke();lx=nx;ly=ny;e.preventDefault()});
+ const fin=()=>{if(!dib)return;dib=false;if(R)R[k].firma=c.toDataURL('image/png')};c.addEventListener('pointerup',fin);c.addEventListener('pointercancel',fin)})}
+new MutationObserver(()=>{if(R&&U.view==='rec')recPads()}).observe(document.body,{childList:true,subtree:true});
+
+/* Guardar */
+function recPayload(){const limpio=a=>a.filter(x=>String(x.cod||'').trim()||String(x.desc||'').trim()||x.q).map(x=>Object.fromEntries(Object.entries(x).map(([k,v])=>[k,typeof v==='string'?v.trim():v])));
+ const p={id:R.id||null,fecha:R.fecha,hora_llegada:R.hora_llegada,hora_ini:R.hora_ini,hora_fin:R.hora_fin,proveedor:(R.proveedor||'').trim(),nit:R.nit,facturas:R.facturas,oc:R.oc,
+  remision:R.remSi==='Sí'?(String(R.remNum||'').trim()||'Sí'):R.remSi==='No'?'No':'',placa:R.placa,conductor:R.conductor,despacho:R.despacho,fmm:R.fmm,grua:R.grua,
+  sobrantes:limpio(R.sobrantes),faltantes:limpio(R.faltantes),danos:limpio(R.danos),observaciones:R.observaciones,realizo:R.realizo,reviso:R.reviso};
+ p.resultado=recNov(p)?'Con diferencias':R.resultado;return p}
+ACT.recSave=async(v,el)=>{recLeer();const p=recPayload();
+ if(!p.proveedor){toast('Escribe el proveedor.','er');$('#rf_proveedor')&&$('#rf_proveedor').focus();return}
+ const malas=[...p.sobrantes,...p.faltantes,...p.danos].filter(x=>!(+x.q>0));if(malas.length){toast('Cada novedad necesita una cantidad mayor que 0.','er');return}
+ if(v==='e'&&!p.realizo.firma&&!p.realizo.nombre){toast('Antes de enviar: escribe el nombre y firma en «Realizó la verificación».','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_recibo_guardar',{p});if(error)throw error;
+  await cargarDatos();R=null;rerender();toast(data.id+' guardado · '+data.resultado+'.','ok');if(v==='e')setTimeout(()=>ACT.recSend(data.id),300)})};
+ACT.recAnular=v=>{modal(mh('Anular '+esc(v),'Queda en el historial como anulado; no se borra.')+`<div class="fld"><label for="raM">Motivo</label><input class="inp" id="raM" placeholder="Ej.: se diligenció dos veces"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="recAnulGo" data-v="${esc(v)}">Anular</button></div>`,'s')};
+ACT.recAnulGo=async(v,el)=>{const m=($('#raM')||{}).value||'';if(m.trim().length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_recibo_anular',{p_id:v,p_motivo:m});if(error)throw error;await cargarDatos();closeModal();rerender();toast(v+' anulado.','ok')})};
+
+/* ---------- PDF igual al formato en papel ---------- */
+function recPdf(r){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),X=12,AW=W-24;
+ const azul=[36,52,107],gris=[90,100,130];let y=12;
+ const pie=()=>{const n=d.internal.getNumberOfPages();for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(...gris);d.text('FR-ALM-001 · Versión 01 · Formato de Verificación y Recibo de Mercancía · '+r.id+' · Página '+i+' de '+n,W-X,H-7,{align:'right'});d.text('Latamks Almacén · Confidencial',X,H-7)}};
+ // Encabezado
+ d.setDrawColor(...azul);d.setLineWidth(.4);d.rect(X,y,AW,24);let tx=X+3;
+ if(S.cfg&&S.cfg.logo){try{const f=/image\/png/.test(S.cfg.logo)?'PNG':'JPEG';d.addImage(S.cfg.logo,f,X+2,y+3,30,18,undefined,'FAST');tx=X+35}catch(e){}}
+ d.line(W-X-52,y,W-X-52,y+24);d.setTextColor(20);d.setFont('helvetica','bold');d.setFontSize(11.5);d.text('FORMATO DE VERIFICACIÓN Y RECIBO DE MERCANCÍA',tx+(W-X-52-tx)/2,y+8,{align:'center'});
+ d.setFont('helvetica','normal');d.setFontSize(8.5);d.text('Reporte de sobrantes, faltantes y material dañado o no conforme',tx+(W-X-52-tx)/2,y+13.5,{align:'center'});
+ d.setFontSize(7.5);d.setTextColor(...gris);d.text('LATAMKS S.A.S. · NIT 901.570.202-4 · Zona Franca La Cayena, Barranquilla',tx+(W-X-52-tx)/2,y+18.5,{align:'center'});
+ d.setTextColor(20);d.setFontSize(8);[['Código:','FR-ALM-001'],['Versión:','01'],['Área:','Almacén'],['Consecutivo N.º:',r.id]].forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-50,y+5.5+i*5);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-24,y+5.5+i*5)});
+ y+=28;const est=r.estado==='Anulado'?'ANULADO · '+(r.anulado_motivo||''):r.estado==='Enviado'?'Enviado a gerencia el '+String(r.enviado_en||'').slice(0,16).replace('T',' ')+' por '+(r.enviado_por||''):'';
+ if(est){d.setFontSize(8);d.setTextColor(r.estado==='Anulado'?180:40,r.estado==='Anulado'?30:110,r.estado==='Anulado'?30:60);d.text(est,X,y);y+=4}
+ const sec=(n,t,sub)=>{if(y>H-40){d.addPage();y=14}d.setFillColor(...azul);d.rect(X,y,AW,6.5,'F');d.setTextColor(255);d.setFont('helvetica','bold');d.setFontSize(9);d.text(n+'. '+t,X+2.5,y+4.5);if(sub){d.setFont('helvetica','normal');d.setFontSize(7.5);d.text(sub,W-X-2.5,y+4.5,{align:'right'})}y+=8.5;d.setTextColor(20)};
+ const tabla=(head,body,cw)=>{d.autoTable({startY:y,margin:{left:X,right:X},head:[head],body:body.length?body:[[{content:'Sin registros',colSpan:head.length,styles:{halign:'center',textColor:[120,120,120]}}]],
+  styles:{fontSize:7.6,cellPadding:1.6,lineColor:[180,186,200],lineWidth:.15,textColor:20,valign:'middle'},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold'},columnStyles:cw||{},theme:'grid'});y=d.lastAutoTable.finalY+5};
+ const ck=(v,o)=>(v===o?'[X] ':'[  ] ')+o;
+ sec(1,'DATOS DEL RECIBO');
+ tabla(['Dato','Valor','Dato','Valor'],[
+  ['Fecha de recibo',fd(r.fecha),'Proveedor',r.proveedor],['Hora de llegada',r.hora_llegada||'','NIT del proveedor',r.nit||''],
+  ['Hora inicio verificación',r.hora_ini||'','N.º de factura(s)',r.facturas||''],['Hora fin verificación',r.hora_fin||'','N.º de orden de compra',r.oc||''],
+  ['Placa del vehículo',r.placa||'','¿Llegó remisión / lista de empaque?',r.remision?(r.remision==='No'?'[X] No':'[X] Sí'+(r.remision!=='Sí'?' N.º '+r.remision:'')):'[  ] Sí   [  ] No'],
+  ['Nombre del conductor',r.conductor||'','N.º de FMM (Appolo)',r.fmm||''],['N.º de despacho del proveedor',r.despacho||'','¿Se usó puente grúa?',['Sí','No','No aplica'].map(o=>ck(r.grua,o)).join('  ')]],
+  {0:{fontStyle:'bold',cellWidth:38},2:{fontStyle:'bold',cellWidth:44}});
+ sec(2,'SOBRANTES','Llegó más de lo facturado o sin factura');
+ d.setFontSize(7.5);d.setTextColor(...gris);d.text('El material sobrante se separa y se marca «PENDIENTE DOCUMENTO». No se entrega a producción hasta que gerencia decida.',X,y-1);y+=2;d.setTextColor(20);
+ tabla(['#','Código','Descripción','Cant. sobrante','¿Tiene OC?','Ubicación donde quedó','Decisión de gerencia'],(r.sobrantes||[]).map((x,i)=>[i+1,x.cod||'',x.desc||'',fmtQ(x.q),x.tiene_oc?ck(x.tiene_oc,'Sí')+' '+ck(x.tiene_oc,'No'):'[  ] Sí [  ] No',x.ub||'','[  ] Pedir factura\n[  ] Devolver\n[  ] Otra: ________']),{0:{cellWidth:7},3:{halign:'right',cellWidth:18},6:{cellWidth:34}});
+ sec(3,'FALTANTES','Facturado pero no llegó');
+ tabla(['#','Código','Descripción','Cant. faltante','Factura afectada','Decisión de gerencia'],(r.faltantes||[]).map((x,i)=>[i+1,x.cod||'',x.desc||'',fmtQ(x.q),x.factura||'','[  ] Reclamar envío\n[  ] Nota crédito\n[  ] Otra: ________']),{0:{cellWidth:7},3:{halign:'right',cellWidth:18},5:{cellWidth:36}});
+ sec(4,'MATERIAL DAÑADO O NO CONFORME');
+ tabla(['#','Código','Descripción','Cantidad','Tipo de daño','¿Se tomó foto?'],(r.danos||[]).map((x,i)=>[i+1,x.cod||'',x.desc||'',fmtQ(x.q),x.tipo||'',x.foto?ck(x.foto,'Sí')+' '+ck(x.foto,'No'):'[  ] Sí [  ] No']),{0:{cellWidth:7},3:{halign:'right',cellWidth:18},5:{cellWidth:28}});
+ sec(5,'RESULTADO Y ENVÍO A GERENCIA');d.setFontSize(8.6);
+ d.text(ck(r.resultado,'Conforme').replace('Conforme','TODO LLEGÓ CONFORME (sin sobrantes, faltantes ni daños)'),X,y);y+=5.5;
+ d.text(ck(r.resultado,'Con diferencias').replace('Con diferencias','CON DIFERENCIAS')+'  -  Enviado por correo a gerencia el '+(r.enviado_en?String(r.enviado_en).slice(0,16).replace('T',' a las '):'____/____/______ a las ____:____')+' por '+(r.enviado_por||'______________________'),X,y);y+=6;
+ d.setFont('helvetica','bold');d.text('Observaciones generales:',X,y);d.setFont('helvetica','normal');y+=4.5;const ob=d.splitTextToSize(r.observaciones||' ',AW);d.rect(X,y-3.5,AW,Math.max(12,ob.length*4+4));d.text(ob,X+2,y+.5);y+=Math.max(12,ob.length*4+4)+4;
+ sec(6,'FIRMAS');
+ const fil=[['Realizó la verificación',r.realizo||{}],['Revisó (jefe de almacén)',r.reviso||{}]];
+ d.autoTable({startY:y,margin:{left:X,right:X},head:[['Rol','Nombre','Cargo','Firma','Fecha']],body:fil.map(([t,f])=>[t,f.nombre||'',f.cargo||'','',f.fecha?fd(f.fecha):'']),theme:'grid',
+  styles:{fontSize:8,cellPadding:2,minCellHeight:20,valign:'middle',lineColor:[180,186,200],lineWidth:.15,textColor:20},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold',minCellHeight:7},columnStyles:{0:{fontStyle:'bold',cellWidth:36},3:{cellWidth:55}},
+  didDrawCell:c=>{if(c.section==='body'&&c.column.index===3){const f=fil[c.row.index][1].firma;if(f)try{d.addImage(f,'PNG',c.cell.x+1.5,c.cell.y+1.5,c.cell.width-3,c.cell.height-3,undefined,'FAST')}catch(e){}}}});
+ pie();return d}
+const nfQ=new Intl.NumberFormat('es-CO',{maximumFractionDigits:3});const fmtQ=q=>q===''||q==null?'':nfQ.format(+q);
+const recArchivo=r=>'FR-ALM-001_'+r.id+'_'+String(r.proveedor||'').replace(/[^A-Za-z0-9]+/g,'_').slice(0,24)+'_'+r.fecha+'.pdf';
+ACT.recPrint=v=>{const r=RECS.find(x=>x.id===v);if(!r)return;try{const d=recPdf(r);const u=d.output('bloburl');const w=window.open(u,'_blank');if(!w)saveFile(recArchivo(r),d.output('blob'))}catch(e){console.error(e);toast('No se pudo generar el PDF: '+esc(e.message||e),'er')}};
+ACT.recSend=async(v,el)=>{const r=RECS.find(x=>x.id===v);if(!r)return;if(!REC_ED()){toast('Solo el Auxiliar o Gerencia envían el recibo.','wa');return}
+ let d;try{d=recPdf(r)}catch(e){toast('No se pudo generar el PDF: '+esc(e.message||e),'er');return}
+ const nom=recArchivo(r),blob=d.output('blob'),asunto='FR-ALM-001 '+r.id+' · '+r.proveedor+' · '+fd(r.fecha)+' · '+r.resultado;
+ const cuerpo='Buen día,\n\nAdjunto el formato de verificación y recibo de mercancía '+r.id+'.\n\nProveedor: '+r.proveedor+'\nFecha: '+fd(r.fecha)+(r.placa?'\nPlaca: '+r.placa:'')+(r.facturas?'\nFactura(s): '+r.facturas:'')+(r.oc?'\nOC: '+r.oc:'')+'\nResultado: '+r.resultado+
+  (recNov(r)?'\nSobrantes: '+(r.sobrantes||[]).length+' · Faltantes: '+(r.faltantes||[]).length+' · Dañados: '+(r.danos||[]).length:'')+'\n\nCordialmente,\n'+(((r.realizo||{}).nombre)||U.user.nombre);
+ let compartido=false;
+ try{const f=new File([blob],nom,{type:'application/pdf'});if(navigator.canShare&&navigator.canShare({files:[f]})&&/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)){await navigator.share({files:[f],title:asunto,text:cuerpo});compartido=true}}catch(e){if(e&&e.name==='AbortError')return}
+ if(!compartido){await saveFile(nom,blob);setTimeout(()=>{location.href='mailto:'+REC_CORREO+'?subject='+encodeURIComponent(asunto)+'&body='+encodeURIComponent(cuerpo+'\n\n(Adjunte el PDF que se acaba de descargar: '+nom+')')},600)}
+ try{const {error}=await SB.rpc('alm_recibo_enviado',{p_id:v});if(error)throw error;await cargarDatos();rerender();
+  toast(compartido?v+' compartido. Elige el correo y envíalo a '+REC_CORREO+'.':v+': se descargó el PDF y se abrió el correo para '+REC_CORREO+'. Adjunta el PDF y envía.','ok')}catch(e){toast(sbErr(e),'er')}};
+Object.assign(ACT_PERM,{recNew:'ea.new',recEdit:'ea.new',recSave:'ea.new',recSend:'ea.new'});
+
+document.head.insertAdjacentHTML('beforeend',`<style>
+.recdoc .rechd{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}.recdoc h2{margin:0 0 4px;font-size:18px;letter-spacing:.2px}.recdoc p{margin:0}
+.recmeta{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:12px;color:var(--mut,#5A6482)}.recmeta b{font-size:18px;color:var(--ink,#14213d)}
+.recinst{margin-top:12px;font-size:13px}.recinst summary{cursor:pointer;font-weight:600}.recinst ol{margin:8px 0 0 18px;line-height:1.55}
+.recsec{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;margin-bottom:12px}.recsec span{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--mar,#24346B);color:#fff;font-size:13px}.recsec em{margin-left:auto;font-style:normal;font-weight:500;font-size:12px;color:var(--mut,#5A6482)}
+.recr{display:grid;gap:8px;align-items:center;margin-bottom:8px}.recn{font-weight:700;color:var(--mut,#5A6482);text-align:center}
+.recr-s{grid-template-columns:22px 150px minmax(0,1fr) 110px 90px 150px 34px}.recr-f{grid-template-columns:22px 150px minmax(0,1fr) 110px 170px 34px}.recr-d{grid-template-columns:22px 150px minmax(0,1fr) 100px 190px 90px 34px}
+@media(max-width:860px){.recr{grid-template-columns:1fr 1fr!important;padding:10px;border:1px solid var(--bd,rgba(36,52,107,.15));border-radius:12px}.recr .recn{grid-column:1/-1;text-align:left}.recr .recn:before{content:'Fila '}.recr>input:nth-of-type(2){grid-column:1/-1}.recr .ib{grid-column:1/-1;justify-self:end}}
+.recrad{display:flex;gap:14px;align-items:center;flex-wrap:wrap;min-height:44px}.recck{display:flex;gap:6px;align-items:center;cursor:pointer}
+.recres{display:grid;grid-template-columns:1fr 1fr;gap:12px}.recres label{display:grid;grid-template-columns:22px 1fr;gap:2px 8px;padding:14px;border:1px solid var(--bd,rgba(36,52,107,.18));border-radius:14px;cursor:pointer}.recres label span{grid-column:2;font-size:12px;color:var(--mut,#5A6482)}.recres label.dis{opacity:.5}
+@media(max-width:640px){.recres{grid-template-columns:1fr}}
+.recfirma{margin-bottom:16px}.recfirma .three{display:grid;grid-template-columns:2fr 1.4fr 1fr;gap:10px}@media(max-width:640px){.recfirma .three{grid-template-columns:1fr}}
+.recpad{position:relative;border:1.5px dashed var(--bd,rgba(36,52,107,.35));border-radius:14px;background:#fff;margin-top:6px}.recpad canvas{display:block;width:100%;height:150px;touch-action:none;border-radius:14px}
+.recpad-h{position:absolute;inset:0;display:grid;place-items:center;color:#9aa3b8;pointer-events:none;font-size:14px}
+.recbar{position:sticky;bottom:0;z-index:5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;margin-top:6px;background:var(--card,#fff);border:1px solid var(--bd,rgba(36,52,107,.15));border-radius:16px;box-shadow:0 -6px 20px rgba(20,33,61,.08)}
 </style>`);
 
 </script>
