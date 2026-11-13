@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.7.0 · bloque 6';
+const VERSION='4.7.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -6175,7 +6175,9 @@ function tpDatos(){const R=tpRango(),todas=tpFilas();
 /* ---------- Gráficas ---------- */
 function tpBarras(D,C){C=C||{};const W=640,H=250,pl=46,pb=26;const mx=Math.max(1,...D.MM.map(x=>x.tot))*1.12,bw=(W-pl-10)/12*.62;const g=C.grid||'var(--bd)',t3=C.tx3||'var(--tx3)',tx=C.tx||'var(--tx)';
  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block" font-family="Manrope,Helvetica,Arial,sans-serif">`;
- for(let i=0;i<=4;i++){const y=H-pb-(H-pb-10)*i/4;s+=`<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="${g}" stroke-dasharray="3 4"/><text x="${pl-8}" y="${y+4}" font-size="10.5" fill="${t3}" text-anchor="end">${tpM(mx*i/4).replace('$ ','')}</text>`}
+ const vac=!D.MM.some(x=>x.tot>0);
+ for(let i=0;i<=4;i++){const y=H-pb-(H-pb-10)*i/4;s+=`<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="${g}" stroke-dasharray="3 4"/>${vac?'':`<text x="${pl-8}" y="${y+4}" font-size="10.5" fill="${t3}" text-anchor="end">${tpM(mx*i/4).replace('$ ','')}</text>`}`}
+ if(vac)s+=`<text x="${(W+pl)/2}" y="${(H-pb)/2+4}" font-size="13" fill="${t3}" text-anchor="middle">Todavía no hay nada cargado al taller en estos 12 meses</text>`;
  D.MM.forEach((x,i)=>{let y=H-pb;const X=pl+(W-pl-10)/12*i+((W-pl-10)/12-bw)/2;
   s+=`<g ${C.pdf?'':`data-act="tpMes" data-v="${x.k}" style="cursor:pointer"`}><rect x="${X-4}" y="10" width="${bw+8}" height="${H-pb-10}" fill="transparent"/>`;
   x.fam.forEach((v,f)=>{if(v<=0)return;const h=(H-pb-10)*v/mx;y-=h;s+=`<rect x="${X}" y="${y}" width="${bw}" height="${h}" fill="${TP_FAM[f][1]}" opacity="${x.en?1:.55}"><title>${x.lab} ${x.y} · ${TP_FAM[f][0]}: ${tpCop(v)}</title></rect>`});
@@ -6215,7 +6217,7 @@ function tpQuien(D){const L=D.quien.filter(x=>x.v>0).slice(0,6);let h='';if(!L.l
  h+=D.alert.length?D.alert.slice(0,3).map(a=>`<div class="note wa" style="margin-top:12px">${icon('warn',16)}<span><b>Alerta:</b> ${esc(a.desc)} subió ${a.pct} % este mes frente al promedio de los 3 meses anteriores (${tpQ(a.now)} contra ${tpQ(a.avg)}).</span></div>`).join('')
   :`<div class="note" style="margin-top:14px">${icon('check',16)}<span>Sin alertas: ningún material subió más del 30 % frente al promedio de los 3 meses anteriores.</span></div>`;
  return h}
-const tpVacio=t=>`<div class="mut3" style="padding:26px 6px;text-align:center;font-size:13px">${icon('inbox',22)}<div style="margin-top:6px">${t}</div></div>`;
+const tpVacio=t=>`<div class="mut3" style="padding:26px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:13px">${icon("inbox",22)}<div>${t}</div></div>`;
 
 /* ---------- 3D: columnas meses × familias (se gira arrastrando; tocar una columna filtra) ---------- */
 let TP3=null;
@@ -6270,9 +6272,9 @@ VIEWS.taller=function(){const D=tpDatos();TP3=D;const R=D.R;const pct=D.ptot?Mat
  <div class="pk"><span>Materiales distintos</span><b>${D.nmat}</b><small>${D.nfam} familia${D.nfam===1?'':'s'}</small></div>
  <div class="pk"><span>Promedio por día hábil</span><b>${tpM(D.dh?D.tot/D.dh:0)}</b><small>${D.dh} día${D.dh===1?'':'s'} hábil${D.dh===1?'':'es'}</small></div>
  <div class="pk"><span>Acumulado del año</span><b>${tpM(D.anio)}</b><small>enero a ${R.h>HOY?'hoy':tpFd(R.h)} · ${D.ya}</small></div></div></section>
- <div class="fbar" style="flex-wrap:wrap;gap:10px"><div class="seg">${TP_PER.map(p=>`<button class="${TP.per===p[0]?'on':''}" data-act="tpPer" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>${sel}
-  <div class="seg tpFams">${[['','Todas'],...TP_FAM.map(f=>[f[0],f[0]])].map(f=>`<button class="${TP.fam===f[0]?'on':''}" data-act="tpFam" data-v="${esc(f[0])}">${f[1]}</button>`).join('')}</div><div class="sp"></div>
+ <div class="fbar" style="flex-wrap:wrap;gap:10px"><div class="seg">${TP_PER.map(p=>`<button class="${TP.per===p[0]?'on':''}" data-act="tpPer" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>${sel}<div class="sp"></div>
   <button class="btn" data-act="tpInforme">${icon('print',16)}Informe</button><button class="btn ghost" data-act="tpXls">${icon('xls',16)}Excel</button><button class="btn ghost" data-act="tpPdf">${icon('pdf',16)}PDF</button></div>
+ <div class="fbar" style="margin-top:-6px"><div class="seg tpFams">${[['','Todas las familias'],...TP_FAM.map(f=>[f[0],f[0]])].map(f=>`<button class="${TP.fam===f[0]?'on':''}" data-act="tpFam" data-v="${esc(f[0])}">${f[0]?`<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${tpFc(f[0])};margin-right:6px"></i>`:''}${f[1]}</button>`).join('')}</div></div>
  ${D.sinc?`<div class="note wa" style="margin-bottom:14px">${icon('warn',16)}<span>${D.sinc} entrega${D.sinc>1?'s':''} del período no tiene${D.sinc>1?'n':''} costo de Siesa y suma${D.sinc>1?'n':''} $ 0. Se corrige con la carga del maestro de Siesa.</span></div>`:''}
  <div class="tpg tpg2"><div class="card"><div class="ch"><div><h3>Costo mes a mes por familia</h3><p>12 meses hasta ${esc(TP_MESL[+((R.h>HOY?HOY:R.h).slice(5,7))-1])} · toca una barra para ver ese mes</p></div></div>${tpBarras(D)}
    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">${TP_FAM.map(f=>`<span style="display:flex;gap:6px;align-items:center;font-size:12px"><i style="width:10px;height:10px;border-radius:3px;background:${f[1]}"></i>${f[0]}</span>`).join('')}</div></div>
