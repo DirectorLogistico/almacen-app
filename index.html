@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.6.2 · bloque 6';
+const VERSION='4.7.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -6055,7 +6055,7 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 {const _so=ACT.saveOC;ACT.saveOC=async(v,el)=>{const nt=$('#ocNit');if(nt&&nitNorm(nt.value).length<5){toast('Escribe el NIT del proveedor (así queda registrado para el recibo de mercancía).','er');nt.focus();return}return _so(v,el)}}
 {const _rpc=SB.rpc.bind(SB);SB.rpc=function(fn,args,o){if(fn==='alm_oc_crear'&&args&&args.p&&!args.p.nit){const nt=$('#ocNit');if(nt&&nt.value)args=Object.assign({},args,{p:Object.assign({},args.p,{nit:nt.value})})}return _rpc(fn,args,o)}}
 
-/* ================= v4.6.2 · Consumibles antes del BOM y solicitudes para TALLER · SQL 24 =================
+/* ================= v4.6.2 · Consumibles antes del BOM y solicitudes para TALLER · SQL 24 (v4.7.0: TALLER pide cualquier familia menos piezas de corte · SQL 25) =================
    · «00000 · TALLER»: consumibles del taller que no son de ningún proyecto. Funciona como un proyecto
      más (su costo se acumula), pero solo deja pedir la familia «Consumibles».
    · Proyecto con la OT sin liberar (por ejemplo, sin BOM todavía): se pueden pedir consumibles y EPP,
@@ -6064,8 +6064,8 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 const TALLER_ID='00000';
 const esTaller=p=>!!p&&p.id===TALLER_ID;
 const sinOT=p=>!!p&&!esTaller(p)&&p.ot&&p.ot.estado!=='Liberada';
-const tabsPermitidas=p=>esTaller(p)?['cons']:sinOT(p)?['cons','epp']:null;
-const famPermitidas=p=>esTaller(p)?['Consumibles']:sinOT(p)?['Consumibles','EPP']:null;
+const tabsPermitidas=p=>esTaller(p)?['cons','epp','svc']:sinOT(p)?['cons','epp']:null;
+const famPermitidas=p=>esTaller(p)?null:sinOT(p)?['Consumibles','EPP']:null;
 
 /* Si el proyecto TALLER no existe (por ejemplo, después de «Borrar todo»), se vuelve a crear */
 let TALLER_INTENTO=false;
@@ -6083,28 +6083,288 @@ let TALLER_INTENTO=false;
   const act=S.proys.filter(x=>x.estado==='Activo');
   const L=[...act.filter(esTaller),...act.filter(x=>!esTaller(x)&&otOK(x)),...act.filter(x=>!esTaller(x)&&!otOK(x))];
   box.innerHTML=L.map(x=>esTaller(x)
-   ?`<button class="kopt" data-act="k2" data-v="${x.id}"><span class="pnum">TALLER</span><span>Consumibles del taller · no es de ningún proyecto</span></button>`
+   ?`<button class="kopt" data-act="k2" data-v="${x.id}"><span class="pnum">TALLER</span><span>Para el taller · no es de ningún proyecto</span></button>`
    :`<button class="kopt" data-act="k2" data-v="${x.id}"><span class="pnum">${x.id}</span><span>${esc(x.desc)} · ${esc(x.op)}${!otOK(x)?`<small style="display:block;margin-top:4px;color:var(--wa);font-weight:600">OT sin liberar · por ahora solo consumibles y EPP</small>`:''}</span></button>`).join('');
   $$('.kcard p.mut3').forEach(x=>{if(/no aparecen/.test(x.textContent))x.remove()})}}
  /* Paso 4: solo las pestañas y familias permitidas */
  if(tp){
   $$('[data-act="kTab"]').forEach(b=>{if(!tp.includes(b.dataset.v))b.remove()});
-  const fp=famPermitidas(p);$$('[data-kc]').forEach(x=>{const m=MI[x.dataset.kc];if(m&&!fp.includes(m.fam)){const r=x.closest('.kli');if(r)r.remove()}});
+  const fp=famPermitidas(p);$$('[data-kc]').forEach(x=>{const m=MI[x.dataset.kc];if(m&&((fp&&!fp.includes(m.fam))||(esTaller(p)&&m.cl))){const r=x.closest('.kli');if(r)r.remove()}});
+  if(esTaller(p)){const b=$('[data-act="kTab"][data-v="svc"]');if(b&&b.firstChild)b.firstChild.textContent='Otros materiales';$$('.kcard .note').forEach(n=>{if(/es un servicio sin BOM/.test(n.textContent))n.remove()})}
   const h=$('.kcard h2');
   if(h){if(esTaller(p)){const n=h.querySelector('.pnum');if(n)n.textContent='TALLER'}
    if(!$('#kTallerNota'))h.insertAdjacentHTML('afterend',`<div class="note" id="kTallerNota" style="margin:6px 0 10px">${icon('info',16)}<span>${esTaller(p)
-    ?'Solicitud para el <b>TALLER</b>: solo <b>consumibles</b> (discos, lijas, soldadura, gases…). Su costo se acumula en «TALLER».'
+    ?'Solicitud para el <b>TALLER</b> (no es de ningún proyecto): consumibles, EPP, herramienta y otros materiales. Su costo se ve en el panel <b>Taller</b>.'
     :`La OT del <b>${esc(p.id)}</b> todavía no está liberada: por ahora puedes pedir <b>consumibles y EPP</b>, cargados a este proyecto. Los componentes del BOM se piden cuando Gerencia libere la OT.`}</span></div>`)}}
  if(K.step===5&&K.mode==='pedir'&&esTaller(p)){const b=$('.kcard p.mut b');if(b&&b.textContent===TALLER_ID)b.textContent='TALLER'}}}
 
 /* Antes de enviar: la misma regla que la base, para avisar sin esperar */
 {const _k5=ACT.k5;ACT.k5=async(v,el)=>{const p=K.proy&&P(K.proy);const fp=famPermitidas(p);
- if(fp){const bad=Object.keys(K.sel).filter(c=>{const m=MI[c];return !m||!fp.includes(m.fam)});
-  if(bad.length){toast((esTaller(p)?'Para TALLER solo se piden consumibles: quita ':'La OT del '+p.id+' no está liberada: solo consumibles y EPP. Quita ')+bad.slice(0,3).map(esc).join(', ')+'.','er');return}}
+ if(fp||esTaller(p)){const bad=Object.keys(K.sel).filter(c=>{const m=MI[c];return !m||(fp&&!fp.includes(m.fam))||(esTaller(p)&&m.cl)});
+  if(bad.length){toast((esTaller(p)?'Las piezas de corte no se cargan al TALLER: quita ':'La OT del '+p.id+' no está liberada: solo consumibles y EPP. Quita ')+bad.slice(0,3).map(esc).join(', ')+'.','er');return}}
  return _k5(v,el)}}
 
 /* En las tarjetas de Solicitudes, el 00000 se lee «TALLER» */
 {const _vs=VIEWS.sol;if(_vs)VIEWS.sol=function(){return String(_vs.apply(this,arguments)).replace(/>00000</g,'>TALLER<')}}
+
+/* ================= v4.7.0 · Panel «Taller» (centro de costos interno) · SQL 25 =================
+   TALLER (00000) no es un proyecto: es lo que se carga al taller y no es de ningún proyecto.
+   · Menú › Operación › Taller: indicadores, filtros por período (fecha, mes, semestre, año, rango)
+     y familia, costo mes a mes, participación por familia, vista 3D, flujo del costo, Pareto de
+     materiales, quién pide, alertas, trazabilidad, inventario cargado y por familia.
+   · Botón «Informe»: PDF ejecutivo + Excel (solo Gerencia y el Auxiliar descargan).
+   · El 00000 deja de aparecer en Proyectos, Tablero, Proyección, Liberaciones, Kits, Diseño,
+     Informes y Corte. Sigue en Solicitudes, Kárdex y Material en planta con el nombre «TALLER».
+   · Costo = cantidad × costo unitario de Siesa guardado en el movimiento; devoluciones restan. */
+const TP_FAM=[['Consumibles','#24346B'],['Materia prima','#5B7DB8'],['Accesorios','#10B981'],['EPP','#F59E0B'],['Herramienta','#8B5CF6'],['Dotación','#06B6D4']];
+const TP_MES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const TP_MESL=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const TP={per:'mes',ref:HOY.slice(0,7),dia:HOY,desde:HOY.slice(0,8)+'01',hasta:HOY,fam:'',tab:'traz',q:'',ang:-0.35,H:{}};
+const tpFc=f=>(TP_FAM.find(x=>x[0]===f)||['','#94A3B8'])[1];
+const tpCop=v=>'$ '+Math.round(v||0).toLocaleString('es-CO');
+const tpM=v=>{v=v||0;const a=Math.abs(v),s=v<0?'-':'';return a>=1e6?s+'$ '+(a/1e6).toFixed(1).replace('.',',')+' M':a>=1e3?s+'$ '+Math.round(a/1e3)+' mil':s+'$ '+Math.round(a)};
+const tpQ=v=>(Math.round((v||0)*100)/100).toLocaleString('es-CO');
+const tpD=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d))};
+const tpS=d=>d.toISOString().slice(0,10);
+const tpAdd=(s,n)=>{const d=tpD(s);d.setUTCDate(d.getUTCDate()+n);return tpS(d)};
+const tpFin=(y,m)=>tpS(new Date(Date.UTC(y,m,0)));
+const tpFd=s=>{const d=tpD(s);return d.getUTCDate()+' '+TP_MES[d.getUTCMonth()].toLowerCase()+' '+d.getUTCFullYear()};
+
+/* ---------- Período elegido y período anterior ---------- */
+function tpRango(){const y=+TP.ref.slice(0,4);
+ if(TP.per==='dia'){const d=TP.dia||HOY;return{d:d,h:d,pd:tpAdd(d,-1),ph:tpAdd(d,-1),txt:tpFd(d),ptxt:'el día anterior'}}
+ if(TP.per==='mes'){const m=+TP.ref.slice(5,7);const pm=m===1?12:m-1,py=m===1?y-1:y;return{d:`${y}-${String(m).padStart(2,'0')}-01`,h:tpFin(y,m),pd:`${py}-${String(pm).padStart(2,'0')}-01`,ph:tpFin(py,pm),txt:TP_MESL[m-1]+' '+y,ptxt:TP_MESL[pm-1]}}
+ if(TP.per==='sem'){const s=TP.ref.endsWith('S2')?2:1;const d=s===1?`${y}-01-01`:`${y}-07-01`,h=s===1?`${y}-06-30`:`${y}-12-31`;const pd=s===1?`${y-1}-07-01`:`${y}-01-01`,ph=s===1?`${y-1}-12-31`:`${y}-06-30`;return{d,h,pd,ph,txt:(s===1?'1.er':'2.º')+' semestre '+y,ptxt:'el semestre anterior'}}
+ if(TP.per==='ano')return{d:`${y}-01-01`,h:`${y}-12-31`,pd:`${y-1}-01-01`,ph:`${y-1}-12-31`,txt:'año '+y,ptxt:String(y-1)};
+ const d=TP.desde<=TP.hasta?TP.desde:TP.hasta,h=TP.desde<=TP.hasta?TP.hasta:TP.desde;const n=Math.round((tpD(h)-tpD(d))/864e5)+1;return{d,h,pd:tpAdd(d,-n),ph:tpAdd(d,-1),txt:tpFd(d)+' a '+tpFd(h),ptxt:'los '+n+' días anteriores'}}
+function tpOpciones(){const o=[];const y0=+HOY.slice(0,4),m0=+HOY.slice(5,7);
+ if(TP.per==='mes'){for(let i=0;i<24;i++){let m=m0-i,y=y0;while(m<1){m+=12;y--}o.push([`${y}-${String(m).padStart(2,'0')}`,TP_MESL[m-1][0].toUpperCase()+TP_MESL[m-1].slice(1)+' '+y])}}
+ if(TP.per==='sem'){for(let y=y0;y>y0-3;y--){if(y<y0||m0>=7)o.push([y+'-S2','2.º semestre '+y]);o.push([y+'-S1','1.er semestre '+y])}}
+ if(TP.per==='ano'){for(let y=y0;y>y0-4;y--)o.push([String(y),String(y)])}
+ return o}
+
+/* ---------- Datos del taller ---------- */
+function tpFilas(){const sol={};(S.sols||[]).forEach(s=>sol[s.id]=s);
+ return S.movs.filter(m=>m.proy===TALLER_ID&&!m.anul&&(m.t==='Salida'||m.t==='Devolución')).map(m=>{const s=m.t==='Salida'?1:-1;const mt=MI[m.cod]||{};const so=sol[String(m.doc||'').split(' ')[0]];
+  return{id:m.id,f:String(m.f).slice(0,10),h:TP.H[m.id]||'',t:m.t,s,cod:m.cod,desc:mt.desc||m.desc||m.cod,fam:mt.fam||'Otros',q:s*m.q,um:m.um||mt.um||'',cu:m.cu||0,v:s*m.q*(m.cu||0),
+   area:(m.sec&&m.sec!=='General'?m.sec:(so&&so.sec&&so.sec!=='General'?so.sec:'')||'General'),doc:m.doc||'',pidio:(so&&so.pide)||m.quien||'',entrego:m.u||'',bod:m.bod||'AL001',interno:typeof esInterno==='function'&&esInterno(mt)}})}
+async function tpHoras(){try{let off=0;for(;;){const {data,error}=await SB.from('alm_movimientos').select('id,creado_en').eq('proyecto',TALLER_ID).range(off,off+999);if(error||!data)break;
+ data.forEach(r=>{if(r.creado_en)TP.H[r.id]=new Date(r.creado_en).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'America/Bogota'})});if(data.length<1000)break;off+=1000}}catch(e){}}
+function tpDatos(){const R=tpRango(),todas=tpFilas();
+ /* Período en curso: se compara contra el mismo corte del período anterior (ej.: 1 al 13 de octubre contra 1 al 13 de noviembre) */
+ if(R.h>HOY&&R.d<=HOY){const n=Math.round((tpD(HOY)-tpD(R.d))/864e5);const c=tpAdd(R.pd,n);if(c<R.ph){R.ph=c;R.ptxt+=' al mismo corte'}}const famOk=r=>!TP.fam||r.fam===TP.fam;
+ const F=todas.filter(r=>r.f>=R.d&&r.f<=R.h&&famOk(r)),Pv=todas.filter(r=>r.f>=R.pd&&r.f<=R.ph&&famOk(r));
+ const sum=a=>a.reduce((x,r)=>x+r.v,0);
+ /* 12 meses que terminan en el mes del final del período */
+ const fin=R.h>HOY?HOY:R.h;let y=+fin.slice(0,4),m=+fin.slice(5,7);const meses=[];for(let i=0;i<12;i++){meses.unshift({y,m,k:`${y}-${String(m).padStart(2,'0')}`});m--;if(m<1){m=12;y--}}
+ const MM=meses.map(x=>{const r=todas.filter(t=>t.f.slice(0,7)===x.k&&famOk(t));return{...x,lab:TP_MES[x.m-1],en:x.k>=R.d.slice(0,7)&&x.k<=R.h.slice(0,7),fam:TP_FAM.map(f=>sum(r.filter(t=>t.fam===f[0]))),tot:sum(r)}});
+ const porFam=TP_FAM.map(f=>({f:f[0],c:f[1],v:sum(F.filter(r=>r.fam===f[0])),pv:sum(Pv.filter(r=>r.fam===f[0])),n:new Set(F.filter(r=>r.fam===f[0]).map(r=>r.cod)).size,e:F.filter(r=>r.fam===f[0]&&r.s>0).length}));
+ const pm={};F.forEach(r=>{const x=pm[r.cod]=pm[r.cod]||{cod:r.cod,desc:r.desc,fam:r.fam,um:r.um,ent:0,dev:0,v:0,ult:'',interno:r.interno};if(r.s>0)x.ent+=r.q;else x.dev-=r.q;x.v+=r.v;if(r.f>x.ult)x.ult=r.f});
+ const mats=Object.values(pm).sort((a,b)=>b.v-a.v);
+ const pq={};F.forEach(r=>{const k=r.pidio||'Sin nombre';const x=pq[k]=pq[k]||{n:k,v:0,A:{}};x.v+=r.v;x.A[r.area]=(x.A[r.area]||0)+Math.abs(r.v)});
+ const quien=Object.values(pq).map(x=>({...x,area:Object.entries(x.A).sort((a,b)=>b[1]-a[1])[0][0]})).sort((a,b)=>b.v-a.v);
+ const ya=(R.h>HOY?HOY:R.h).slice(0,4);const anio=sum(todas.filter(r=>r.f.slice(0,4)===ya&&r.f<=R.h&&famOk(r)));
+ let dh=0;for(let d=R.d;d<=(R.h>HOY?HOY:R.h);d=tpAdd(d,1)){const w=tpD(d).getUTCDay();if(w>0&&w<6)dh++}
+ /* Alertas: material cuyo consumo del mes supera en 30 % el promedio de los 3 meses anteriores */
+ const alert=[];const ult=MM[11],prev=MM.slice(8,11).map(x=>x.k);const qm=(cod,k)=>todas.filter(t=>t.cod===cod&&t.f.slice(0,7)===k).reduce((a,t)=>a+t.q,0);
+ [...new Set(todas.filter(t=>t.f.slice(0,7)===ult.k).map(t=>t.cod))].forEach(cod=>{const now=qm(cod,ult.k),avg=prev.reduce((a,k)=>a+qm(cod,k),0)/3;if(avg>=2&&now>avg*1.3)alert.push({cod,desc:(MI[cod]||{}).desc||cod,pct:Math.round((now-avg)/avg*100),now,avg})});
+ alert.sort((a,b)=>b.pct-a.pct);
+ const abiertas=(S.sols||[]).filter(s=>s.proy===TALLER_ID&&['Pendiente','En preparación','Por aprobar'].includes(s.estado)).length;
+ return{R,F,Pv,tot:sum(F),ptot:sum(Pv),MM,porFam,mats,quien,anio,ya,dh,alert,abiertas,ent:new Set(F.filter(r=>r.s>0).map(r=>r.doc)).size,nmat:new Set(F.map(r=>r.cod)).size,nfam:new Set(F.map(r=>r.fam)).size,sinc:F.filter(r=>r.s>0&&!r.cu).length}}
+
+/* ---------- Gráficas ---------- */
+function tpBarras(D,C){C=C||{};const W=640,H=250,pl=46,pb=26;const mx=Math.max(1,...D.MM.map(x=>x.tot))*1.12,bw=(W-pl-10)/12*.62;const g=C.grid||'var(--bd)',t3=C.tx3||'var(--tx3)',tx=C.tx||'var(--tx)';
+ let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block" font-family="Manrope,Helvetica,Arial,sans-serif">`;
+ for(let i=0;i<=4;i++){const y=H-pb-(H-pb-10)*i/4;s+=`<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="${g}" stroke-dasharray="3 4"/><text x="${pl-8}" y="${y+4}" font-size="10.5" fill="${t3}" text-anchor="end">${tpM(mx*i/4).replace('$ ','')}</text>`}
+ D.MM.forEach((x,i)=>{let y=H-pb;const X=pl+(W-pl-10)/12*i+((W-pl-10)/12-bw)/2;
+  s+=`<g ${C.pdf?'':`data-act="tpMes" data-v="${x.k}" style="cursor:pointer"`}><rect x="${X-4}" y="10" width="${bw+8}" height="${H-pb-10}" fill="transparent"/>`;
+  x.fam.forEach((v,f)=>{if(v<=0)return;const h=(H-pb-10)*v/mx;y-=h;s+=`<rect x="${X}" y="${y}" width="${bw}" height="${h}" fill="${TP_FAM[f][1]}" opacity="${x.en?1:.55}"><title>${x.lab} ${x.y} · ${TP_FAM[f][0]}: ${tpCop(v)}</title></rect>`});
+  s+=`<text x="${X+bw/2}" y="${H-8}" font-size="11" fill="${x.en?tx:t3}" font-weight="${x.en?700:400}" text-anchor="middle">${x.lab}</text>`;
+  if(x.en&&x.tot>0)s+=`<text x="${X+bw/2}" y="${y-7}" font-size="10.5" font-weight="700" fill="${tx}" text-anchor="middle">${tpM(x.tot)}</text>`;s+='</g>'});
+ return s+'</svg>'}
+function tpDona(D){const T=D.porFam.reduce((a,x)=>a+Math.max(0,x.v),0);let a0=-Math.PI/2,s='<svg viewBox="0 0 200 200" width="190" height="190" style="flex:none">';
+ if(T<=0)s+='<circle cx="100" cy="100" r="73" fill="none" stroke="var(--bd)" stroke-width="30"/>';
+ else D.porFam.forEach(x=>{if(x.v<=0)return;const a1=a0+x.v/T*Math.PI*2-1e-6,R=88,ri=58,lg=a1-a0>Math.PI?1:0;const P=(a,r)=>[100+r*Math.cos(a),100+r*Math.sin(a)];const [x0,y0]=P(a0,R),[x1,y1]=P(a1,R),[x2,y2]=P(a1,ri),[x3,y3]=P(a0,ri);
+  s+=`<path d="M${x0} ${y0}A${R} ${R} 0 ${lg} 1 ${x1} ${y1}L${x2} ${y2}A${ri} ${ri} 0 ${lg} 0 ${x3} ${y3}Z" fill="${x.c}" stroke="var(--card)" stroke-width="2" data-act="tpFam" data-v="${esc(x.f)}" style="cursor:pointer"><title>${x.f}: ${tpCop(x.v)}</title></path>`;a0=a1});
+ s+=`<text x="100" y="95" text-anchor="middle" font-size="11.5" fill="var(--tx3)">${esc(TP.fam||'Total')}</text><text x="100" y="117" text-anchor="middle" font-size="19" font-weight="800" fill="var(--tx)">${tpM(D.tot)}</text></svg>`;
+ return`<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">${s}<div style="flex:1;min-width:200px">${D.porFam.map(x=>`<button class="tpLeg ${TP.fam===x.f?'on':''}" data-act="tpFam" data-v="${esc(x.f)}"><i style="background:${x.c}"></i><span>${x.f}</span><b>${tpM(x.v)}</b><em>${T>0?Math.round(Math.max(0,x.v)/T*100):0}%</em></button>`).join('')}</div></div>`}
+function tpSankey(D){const W=640,H=300,F=D.F.filter(r=>r.v>0);const T=F.reduce((a,r)=>a+r.v,0);if(T<=0)return tpVacio('Sin entregas en este período.');
+ const grp=(k)=>{const o={};F.forEach(r=>o[r[k]]=(o[r[k]]||0)+r.v);return o};
+ const B0=grp('bod'),A0=grp('area');let areas=Object.entries(A0).sort((a,b)=>b[1]-a[1]);if(areas.length>6){const r=areas.slice(5).reduce((a,x)=>a+x[1],0);areas=[...areas.slice(0,5),['Otras áreas',r]]}
+ const aName=a=>areas.some(x=>x[0]===a)?a:'Otras áreas';
+ const famL=TP_FAM.map(f=>[f[0],F.filter(r=>r.fam===f[0]).reduce((a,r)=>a+r.v,0),f[1]]).filter(x=>x[1]>0);
+ const col=(L,x,gap)=>{const avail=H-gap*(L.length-1)-10;let y=5;return L.map(n=>{const h=Math.max(3,avail*n.v/T);const o={...n,x,y,h,o1:0,o2:0};y+=h+gap;return o})};
+ const A=col(Object.entries(B0).sort((a,b)=>b[1]-a[1]).map(([n,v])=>({n:n==='MP001'?'MP001 · Materia prima':n==='AL001'?'AL001 · Almacén':n,k:n,v,c:'#94A3B8'})),8,14);
+ const B=col(famL.map(f=>({n:f[0],k:f[0],v:f[1],c:f[2]})),W/2-7,8),C=col(areas.map(a=>({n:a[0],k:a[0],v:a[1],c:'#24346B'})),W-22,10);
+ let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`;
+ const band=(a,b,v,c,t)=>{if(v<=0)return;const ha=a.h*v/a.v,hb=b.h*v/b.v;const y0=a.y+a.o2,y1=b.y+b.o1;a.o2+=ha;b.o1+=hb;const x0=a.x+14,x1=b.x,mx=(x0+x1)/2;
+  s+=`<path d="M${x0} ${y0}C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}L${x1} ${y1+hb}C${mx} ${y1+hb} ${mx} ${y0+ha} ${x0} ${y0+ha}Z" fill="${c}" opacity=".3"><title>${t}: ${tpCop(v)}</title></path>`};
+ A.forEach(a=>B.forEach(b=>band(a,b,F.filter(r=>r.bod===a.k&&r.fam===b.k).reduce((x,r)=>x+r.v,0),b.c,a.k+' → '+b.k)));
+ B.forEach(b=>C.forEach(c=>band(b,c,F.filter(r=>r.fam===b.k&&aName(r.area)===c.k).reduce((x,r)=>x+r.v,0),b.c,b.k+' → '+c.k)));
+ [...A,...B,...C].forEach(n=>s+=`<rect x="${n.x}" y="${n.y}" width="14" height="${n.h}" rx="3" fill="${n.c}"/>`);
+ A.forEach(n=>s+=`<text x="${n.x+20}" y="${n.y+n.h/2+4}" font-size="11.5" font-weight="600" fill="var(--tx)">${esc(n.n)}</text>`);
+ B.forEach(n=>s+=`<text x="${n.x+20}" y="${n.y+n.h/2+4}" font-size="11" fill="var(--tx)">${esc(n.n)}</text>`);
+ C.forEach(n=>s+=`<text x="${n.x-6}" y="${n.y+n.h/2+4}" font-size="11" fill="var(--tx)" text-anchor="end">${esc(n.n)} · ${Math.round(n.v/T*100)}%</text>`);
+ return s+'</svg>'}
+function tpPareto(D){const L=D.mats.filter(x=>x.v>0).slice(0,10);if(!L.length)return tpVacio('Sin materiales cargados en este período.');const T=D.mats.reduce((a,x)=>a+Math.max(0,x.v),0),mx=L[0].v;let acc=0;
+ const n4=Math.round(L.slice(0,4).reduce((a,x)=>a+x.v,0)/T*100);
+ return`<div style="display:grid;gap:9px">${L.map((x,i)=>{acc+=x.v;return`<div class="tpPar"><b class="mut3">${i+1}</b><div style="min-width:0"><div class="tpEl" title="${esc(x.cod)}">${esc(x.desc)}${x.interno?' <span class="bd" style="font-size:10px">interno</span>':''}</div><div class="tpBar"><i style="width:${x.v/mx*100}%;background:${tpFc(x.fam)}"></i></div></div><b style="text-align:right">${tpM(x.v)}</b><span class="mut3" style="text-align:right">${Math.round(acc/T*100)}%</span></div>`}).join('')}</div>
+ <p class="mut3" style="font-size:11.5px;margin-top:10px">La última columna es el acumulado${L.length>=4?`: los 4 primeros materiales son el ${n4}% del costo`:''}.</p>`}
+function tpQuien(D){const L=D.quien.filter(x=>x.v>0).slice(0,6);let h='';if(!L.length)h=tpVacio('Nadie ha pedido para el taller en este período.');
+ else{const mx=L[0].v;h=`<div style="display:grid;gap:12px">${L.map(x=>`<div style="display:flex;gap:12px;align-items:center"><div class="tpAv">${esc(x.n.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase())}</div><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;gap:8px"><b class="tpEl" style="font-size:13px">${esc(x.n)}</b><b style="font-size:13px;white-space:nowrap">${tpM(x.v)}</b></div><div class="mut3" style="font-size:11.5px">${esc(x.area)}</div><div class="tpBar" style="height:6px"><i style="width:${x.v/mx*100}%;background:linear-gradient(90deg,#24346B,#5B7DB8)"></i></div></div></div>`).join('')}</div>`}
+ h+=D.alert.length?D.alert.slice(0,3).map(a=>`<div class="note wa" style="margin-top:12px">${icon('warn',16)}<span><b>Alerta:</b> ${esc(a.desc)} subió ${a.pct} % este mes frente al promedio de los 3 meses anteriores (${tpQ(a.now)} contra ${tpQ(a.avg)}).</span></div>`).join('')
+  :`<div class="note" style="margin-top:14px">${icon('check',16)}<span>Sin alertas: ningún material subió más del 30 % frente al promedio de los 3 meses anteriores.</span></div>`;
+ return h}
+const tpVacio=t=>`<div class="mut3" style="padding:26px 6px;text-align:center;font-size:13px">${icon('inbox',22)}<div style="margin-top:6px">${t}</div></div>`;
+
+/* ---------- 3D: columnas meses × familias (se gira arrastrando; tocar una columna filtra) ---------- */
+let TP3=null;
+function tp3d(){const cv=$('#tp3d');if(!cv)return;const D=TP3;if(!D)return;const ctx=cv.getContext('2d'),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W)return;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+ const nx=12,ny=TP_FAM.length,sc=Math.min(W/26,H/16),mx=Math.max(1,...D.MM.flatMap(x=>x.fam)),cx=W/2,cy=H*0.62,ca=Math.cos(TP.ang),sa=Math.sin(TP.ang);
+ const P=(x,y,z)=>{const X=x-nx/2,Y=y-ny/2;const xr=X*ca-Y*sa,yr=X*sa+Y*ca;return[cx+(xr-yr)*0.866*sc,cy+(xr+yr)*0.5*sc-z*sc,xr+yr]};
+ const dark=document.documentElement.dataset.theme==='dark'||document.body.classList.contains('dark');
+ ctx.strokeStyle=dark?'rgba(200,210,240,.15)':'rgba(120,130,160,.25)';ctx.lineWidth=1;
+ for(let i=0;i<=nx;i++){const a=P(i,0,0),b=P(i,ny,0);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke()}for(let j=0;j<=ny;j++){const a=P(0,j,0),b=P(nx,j,0);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke()}
+ const bars=[];for(let i=0;i<nx;i++)for(let j=0;j<ny;j++){const v=D.MM[i].fam[j];bars.push({i,j,v,h:v/mx*7.5,d:P(i+.5,j+.5,0)[2]})}bars.sort((a,b)=>a.d-b.d);
+ const sh=(hex,k)=>{const n=parseInt(hex.slice(1),16);return`rgb(${Math.min(255,(n>>16)*k)|0},${Math.min(255,(n>>8&255)*k)|0},${Math.min(255,(n&255)*k)|0})`};
+ TP.hit=[];bars.forEach(b=>{if(b.v<=0)return;const x0=b.i+.18,x1=b.i+.82,y0=b.j+.18,y1=b.j+.82,c=TP_FAM[b.j][1],sel=D.MM[b.i].en&&(!TP.fam||TP.fam===TP_FAM[b.j][0]);
+  [[[x0,y0],[x1,y0]],[[x1,y0],[x1,y1]],[[x1,y1],[x0,y1]],[[x0,y1],[x0,y0]]].map(f=>({f,d:P((f[0][0]+f[1][0])/2,(f[0][1]+f[1][1])/2,0)[2]})).sort((a,b)=>a.d-b.d).forEach(({f},k)=>{
+   const p=[P(f[0][0],f[0][1],0),P(f[1][0],f[1][1],0),P(f[1][0],f[1][1],b.h),P(f[0][0],f[0][1],b.h)];ctx.globalAlpha=sel?1:.45;ctx.fillStyle=sh(c,k%2?0.78:0.62);ctx.beginPath();p.forEach((q,n)=>n?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fill()});
+  const t=[P(x0,y0,b.h),P(x1,y0,b.h),P(x1,y1,b.h),P(x0,y1,b.h)];ctx.fillStyle=sh(c,1.15);ctx.beginPath();t.forEach((q,n)=>n?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+  const bot=[P(x0,y0,0),P(x1,y0,0),P(x1,y1,0),P(x0,y1,0)];TP.hit.push({poly:[...bot,...t],m:D.MM[b.i],f:TP_FAM[b.j][0],v:b.v})});
+ ctx.font='600 11px Manrope,system-ui,sans-serif';ctx.fillStyle=dark?'rgba(210,218,240,.9)':'rgba(100,110,140,.95)';D.MM.forEach((x,i)=>{const p=P(i+.5,ny+.9,0);ctx.fillText(x.lab,p[0]-9,p[1]+4)});
+ TP_FAM.forEach((f,j)=>{const p=P(nx+.5,j+.5,0);ctx.fillStyle=f[1];ctx.fillText(f[0],p[0]+4,p[1]+4)})}
+function tp3dEventos(){const cv=$('#tp3d');if(!cv||cv.dataset.ev)return;cv.dataset.ev='1';let x0=null,mov=0;
+ cv.addEventListener('pointerdown',e=>{x0=e.clientX;mov=0;try{cv.setPointerCapture(e.pointerId)}catch(_){}});
+ cv.addEventListener('pointermove',e=>{if(x0==null){const h=tpHit(cv,e);cv.title=h?`${h.m.lab} ${h.m.y} · ${h.f}: ${tpCop(h.v)}`:'';cv.style.cursor=h?'pointer':'grab';return}const dx=e.clientX-x0;mov+=Math.abs(dx);TP.ang+=dx/180;x0=e.clientX;tp3d()});
+ cv.addEventListener('pointerup',e=>{const fue=mov<4;x0=null;if(!fue)return;const h=tpHit(cv,e);if(h){TP.per='mes';TP.ref=h.m.k;TP.fam=TP.fam===h.f?'':h.f;rerender()}})}
+function tpHit(cv,e){const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const inP=(p,q)=>{let c=false;for(let i=0,j=q.length-1;i<q.length;j=i++){const [xi,yi]=q[i],[xj,yj]=q[j];if(((yi>p[1])!==(yj>p[1]))&&(p[0]<(xj-xi)*(p[1]-yi)/(yj-yi)+xi))c=!c}return c};
+ const hull=pts=>{const p=pts.map(a=>[a[0],a[1]]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);const lo=[],up=[];p.forEach(q=>{while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q)});p.slice().reverse().forEach(q=>{while(up.length>=2&&cr(up[up.length-2],up[up.length-1],q)<=0)up.pop();up.push(q)});return lo.slice(0,-1).concat(up.slice(0,-1))};
+ for(let i=(TP.hit||[]).length-1;i>=0;i--){if(inP([x,y],hull(TP.hit[i].poly)))return TP.hit[i]}return null}
+
+/* ---------- Tablas de detalle ---------- */
+function tpTabla(D){const q=navNorm?navNorm(TP.q||''):String(TP.q||'').toLowerCase();const nq=s=>(navNorm?navNorm(s):String(s).toLowerCase()).includes(q);
+ if(TP.tab==='inv'){const L=D.mats.filter(x=>!q||nq(x.cod+' '+x.desc+' '+x.fam));
+  regT('tpInv','Taller · inventario cargado ('+D.R.txt+')',['Código','Material','Familia','UM','Entregado','Devuelto','Neto','Costo','Última entrega'],L.map(x=>[x.cod,x.desc,x.fam,x.um,x.ent,x.dev,x.ent-x.dev,Math.round(x.v),x.ult]));
+  return{x:'tpInv',h:`<table class="t stkm tpT"><thead><tr><th>Material</th><th>Familia</th><th style="text-align:right">Entregado</th><th style="text-align:right">Devuelto</th><th style="text-align:right">Neto</th><th style="text-align:right">Costo</th><th>Última</th></tr></thead><tbody>${L.map(x=>`<tr><td class="nm"><b>${esc(x.cod)}</b><div class="sub">${esc(x.desc)}${x.interno?' · interno':''}</div></td><td data-l="Familia">${tpChip(x.fam)}</td><td data-l="Entregado" style="text-align:right">${tpQ(x.ent)} ${esc(x.um)}</td><td data-l="Devuelto" style="text-align:right">${x.dev?tpQ(x.dev):'—'}</td><td data-l="Neto" style="text-align:right"><b>${tpQ(x.ent-x.dev)}</b></td><td data-l="Costo" style="text-align:right"><b>${tpCop(x.v)}</b></td><td data-l="Última">${x.ult?tpFd(x.ult):''}</td></tr>`).join('')||`<tr><td colspan="7">${tpVacio('Nada cargado en este período.')}</td></tr>`}</tbody></table>`}}
+ if(TP.tab==='fam'){const T=D.porFam.reduce((a,x)=>a+Math.max(0,x.v),0);
+  regT('tpFamT','Taller · por familia ('+D.R.txt+')',['Familia','Entregas','Materiales','Costo','% del total','Período anterior','Variación %'],D.porFam.map(x=>[x.f,x.e,x.n,Math.round(x.v),T?Math.round(x.v/T*100):0,Math.round(x.pv),x.pv?Math.round((x.v-x.pv)/x.pv*100):'']));
+  return{x:'tpFamT',h:`<table class="t stkm tpT"><thead><tr><th>Familia</th><th style="text-align:right">Entregas</th><th style="text-align:right">Materiales</th><th style="text-align:right">Costo</th><th style="text-align:right">% del total</th><th style="text-align:right">${esc(D.R.ptxt[0].toUpperCase()+D.R.ptxt.slice(1))}</th><th style="text-align:right">Variación</th></tr></thead><tbody>${D.porFam.map(x=>{const vr=x.pv?Math.round((x.v-x.pv)/x.pv*100):null;return`<tr><td class="nm">${tpChip(x.f)}</td><td data-l="Entregas" style="text-align:right">${x.e}</td><td data-l="Materiales" style="text-align:right">${x.n}</td><td data-l="Costo" style="text-align:right"><b>${tpCop(x.v)}</b></td><td data-l="% del total" style="text-align:right">${T?Math.round(Math.max(0,x.v)/T*100):0}%</td><td data-l="Anterior" style="text-align:right">${tpCop(x.pv)}</td><td data-l="Variación" style="text-align:right;color:${vr==null?'inherit':vr>0?'var(--er)':'var(--ok)'}">${vr==null?'—':(vr>0?'▲ ':'▼ ')+Math.abs(vr)+' %'}</td></tr>`}).join('')}</tbody></table>`}}
+ const L=D.F.filter(r=>!q||nq(r.cod+' '+r.desc+' '+r.doc+' '+r.pidio+' '+r.area+' '+r.entrego)).sort((a,b)=>(b.f+b.h+String(b.id).padStart(9,'0'))>(a.f+a.h+String(a.id).padStart(9,'0'))?1:-1);
+ regT('tpTraz','Taller · trazabilidad ('+D.R.txt+')',['Fecha','Hora','Documento','Tipo','Código','Material','Familia','Cantidad','UM','Costo unitario','Costo','Pidió','Área','Entregó','Bodega'],L.map(r=>[r.f,r.h,r.doc,r.t,r.cod,r.desc,r.fam,r.q,r.um,r.cu,Math.round(r.v),r.pidio,r.area,r.entrego,r.bod]));
+ const V=L.slice(0,300);
+ return{x:'tpTraz',h:`<table class="t stkm tpT"><thead><tr><th>Fecha</th><th>Documento</th><th>Material</th><th>Familia</th><th style="text-align:right">Cant.</th><th style="text-align:right">Costo</th><th>Pidió</th><th>Área</th><th>Entregó</th></tr></thead><tbody>${V.map(r=>`<tr><td class="nm"><b>${tpFd(r.f)}</b><div class="sub">${esc(r.h||'')}</div></td><td data-l="Documento"><b>${esc(String(r.doc).split(' · ')[0])}</b>${r.s<0?'<div class="sub">devolución</div>':''}</td><td data-l="Material">${esc(r.desc)}<div class="sub">${esc(r.cod)}</div></td><td data-l="Familia">${tpChip(r.fam)}</td><td data-l="Cantidad" style="text-align:right">${tpQ(r.q)} ${esc(r.um)}</td><td data-l="Costo" style="text-align:right;${r.v<0?'color:var(--ok)':''}"><b>${tpCop(r.v)}</b>${!r.cu&&r.s>0?'<div class="sub" style="color:var(--wa)">sin costo Siesa</div>':''}</td><td data-l="Pidió">${esc(r.pidio||'—')}</td><td data-l="Área">${esc(r.area)}</td><td data-l="Entregó">${esc(r.entrego||'—')}</td></tr>`).join('')||`<tr><td colspan="9">${tpVacio('No hay entregas ni devoluciones del taller en este período.')}</td></tr>`}</tbody></table>${L.length>300?`<p class="mut3" style="font-size:12px;margin-top:8px">Se muestran las 300 más recientes de ${L.length}. El Excel trae todas.</p>`:''}`}}
+const tpChip=f=>`<span style="display:inline-flex;gap:6px;align-items:center;white-space:nowrap"><i style="width:9px;height:9px;border-radius:3px;background:${tpFc(f)};flex:none"></i>${esc(f)}</span>`;
+
+/* ---------- Vista ---------- */
+const TP_PER=[['dia','Fecha'],['mes','Mes'],['sem','Semestre'],['ano','Año'],['rng','Rango']];
+VIEWS.taller=function(){const D=tpDatos();TP3=D;const R=D.R;const pct=D.ptot?Math.round((D.tot-D.ptot)/Math.abs(D.ptot)*100):null;
+ const sel=TP.per==='dia'?`<input type="date" class="inp" style="max-width:180px" id="tpDia" value="${TP.dia}" max="${HOY}">`
+  :TP.per==='rng'?`<input type="date" class="inp" style="max-width:170px" id="tpDesde" value="${TP.desde}"><span class="mut3">a</span><input type="date" class="inp" style="max-width:170px" id="tpHasta" value="${TP.hasta}">`
+  :`<select class="inp" style="max-width:200px" id="tpRef">${tpOpciones().map(o=>`<option value="${o[0]}" ${o[0]===TP.ref?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+ const T=tpTabla(D);const cap=s=>s[0].toUpperCase()+s.slice(1);
+ return`<section class="phero"><div class="phl"><div class="live"><i></i>En vivo · ${fd(HOY)} ${nowHM()}</div><h1>Taller</h1><p>Todo lo que se carga al taller y no es de un proyecto: consumibles, materiales, EPP y herramienta. Costo de Siesa, con la trazabilidad de cada entrega y devolución.</p></div>
+ <div class="pkpis"><div class="pk"><span>Cargado · ${esc(R.txt)}</span><b class="tpNum">${tpM(D.tot)}</b><small>neto de devoluciones${TP.fam?' · '+esc(TP.fam):''}</small></div>
+ <div class="pk ${pct!=null&&pct>10?'w':''}"><span>Frente a ${esc(R.ptxt)}</span><b>${pct==null?'—':(pct>0?'▲ ':pct<0?'▼ ':'')+Math.abs(pct)+' %'}</b><small>${tpM(D.ptot)} en ${esc(R.ptxt)}</small></div>
+ <div class="pk ${D.abiertas?'w':''}"><span>Entregas al taller</span><b>${D.ent}</b><small>${D.abiertas?D.abiertas+' solicitud'+(D.abiertas>1?'es':'')+' abierta'+(D.abiertas>1?'s':''):'sin solicitudes abiertas'}</small></div>
+ <div class="pk"><span>Materiales distintos</span><b>${D.nmat}</b><small>${D.nfam} familia${D.nfam===1?'':'s'}</small></div>
+ <div class="pk"><span>Promedio por día hábil</span><b>${tpM(D.dh?D.tot/D.dh:0)}</b><small>${D.dh} día${D.dh===1?'':'s'} hábil${D.dh===1?'':'es'}</small></div>
+ <div class="pk"><span>Acumulado del año</span><b>${tpM(D.anio)}</b><small>enero a ${R.h>HOY?'hoy':tpFd(R.h)} · ${D.ya}</small></div></div></section>
+ <div class="fbar" style="flex-wrap:wrap;gap:10px"><div class="seg">${TP_PER.map(p=>`<button class="${TP.per===p[0]?'on':''}" data-act="tpPer" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>${sel}
+  <div class="seg tpFams">${[['','Todas'],...TP_FAM.map(f=>[f[0],f[0]])].map(f=>`<button class="${TP.fam===f[0]?'on':''}" data-act="tpFam" data-v="${esc(f[0])}">${f[1]}</button>`).join('')}</div><div class="sp"></div>
+  <button class="btn" data-act="tpInforme">${icon('print',16)}Informe</button><button class="btn ghost" data-act="tpXls">${icon('xls',16)}Excel</button><button class="btn ghost" data-act="tpPdf">${icon('pdf',16)}PDF</button></div>
+ ${D.sinc?`<div class="note wa" style="margin-bottom:14px">${icon('warn',16)}<span>${D.sinc} entrega${D.sinc>1?'s':''} del período no tiene${D.sinc>1?'n':''} costo de Siesa y suma${D.sinc>1?'n':''} $ 0. Se corrige con la carga del maestro de Siesa.</span></div>`:''}
+ <div class="tpg tpg2"><div class="card"><div class="ch"><div><h3>Costo mes a mes por familia</h3><p>12 meses hasta ${esc(TP_MESL[+((R.h>HOY?HOY:R.h).slice(5,7))-1])} · toca una barra para ver ese mes</p></div></div>${tpBarras(D)}
+   <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">${TP_FAM.map(f=>`<span style="display:flex;gap:6px;align-items:center;font-size:12px"><i style="width:10px;height:10px;border-radius:3px;background:${f[1]}"></i>${f[0]}</span>`).join('')}</div></div>
+  <div class="card"><div class="ch"><div><h3>Participación por familia</h3><p>${esc(cap(R.txt))} · toca una familia para filtrar</p></div></div>${tpDona(D)}</div></div>
+ <div class="tpg tpg3"><div class="card"><div class="ch"><div><h3>Vista 3D · meses × familias</h3><p>La altura es el costo. Arrastra para girar; toca una columna para ver ese mes y esa familia.</p></div><span class="bd">3D</span></div><canvas id="tp3d" style="width:100%;height:300px;cursor:grab;display:block;touch-action:pan-y"></canvas></div>
+  <div class="card"><div class="ch"><div><h3>Flujo del costo</h3><p>De qué bodega sale → qué familia → a qué área del taller llega</p></div></div>${tpSankey(D)}</div></div>
+ <div class="tpg tpg4"><div class="card"><div class="ch"><div><h3>Top 10 materiales (Pareto)</h3><p>Lo que más pesa en el costo del taller · ${esc(R.txt)}</p></div></div>${tpPareto(D)}</div>
+  <div class="card"><div class="ch"><div><h3>Quién pide y para qué área</h3><p>Costo entregado por persona que pidió</p></div></div>${tpQuien(D)}</div></div>
+ <div class="card"><div class="ch"><div><div class="tabs" style="margin:0">${[['traz','Trazabilidad'],['inv','Inventario cargado'],['fam','Por familia']].map(t=>`<button class="${TP.tab===t[0]?'on':''}" data-act="tpTab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div></div><div class="acts tpActs"><input class="inp" id="tpQ" placeholder="Buscar material, documento o persona" value="${esc(TP.q)}">${xbtns(T.x)}</div></div>
+  <div class="tw" style="margin-top:12px" id="tpTabla">${T.h}</div></div>`};
+{const _r=render;render=function(){const r=_r.apply(this,arguments);if(U.view==='taller')setTimeout(()=>{tp3d();tp3dEventos();tpCampos()},0);return r}}
+function tpCampos(){const on=(id,ev,fn)=>{const e=$('#'+id);if(e&&!e.dataset.tp){e.dataset.tp='1';e.addEventListener(ev,fn)}};
+ on('tpRef','change',e=>{TP.ref=e.target.value;rerender()});on('tpDia','change',e=>{if(e.target.value){TP.dia=e.target.value;rerender()}});
+ on('tpDesde','change',e=>{if(e.target.value){TP.desde=e.target.value;rerender()}});on('tpHasta','change',e=>{if(e.target.value){TP.hasta=e.target.value;rerender()}});
+ on('tpQ','input',e=>{TP.q=e.target.value;const D=tpDatos();const t=$('#tpTabla');if(t)t.innerHTML=tpTabla(D).h})}
+window.addEventListener('resize',()=>{if(U.view==='taller')tp3d()});
+ACT.tpPer=v=>{TP.per=v;if(v==='mes')TP.ref=HOY.slice(0,7);if(v==='sem')TP.ref=HOY.slice(0,4)+(+HOY.slice(5,7)>=7?'-S2':'-S1');if(v==='ano')TP.ref=HOY.slice(0,4);rerender()};
+ACT.tpFam=v=>{TP.fam=TP.fam===v?'':v;rerender()};
+ACT.tpMes=v=>{TP.per='mes';TP.ref=v;rerender()};
+ACT.tpTab=v=>{TP.tab=v;rerender()};
+
+/* ---------- Informe: vista previa, PDF ejecutivo y Excel ---------- */
+ACT.tpInforme=()=>{const D=tpDatos(),R=D.R;const pct=D.ptot?Math.round((D.tot-D.ptot)/Math.abs(D.ptot)*100):null;
+ modal(mh('Informe del taller',esc(R.txt[0].toUpperCase()+R.txt.slice(1))+(TP.fam?' · '+esc(TP.fam):'')+' · se descarga en PDF y Excel')+`<div class="tpRep">
+ <div class="tpRepH"><div><b style="font-size:16px">INFORME DE COSTOS DEL TALLER</b><div class="tpRepS">LATAMKS S.A.S. · Zona Franca La Cayena · Período: ${esc(R.txt)}${TP.fam?' · '+esc(TP.fam):''}</div></div><div class="tpRepS" style="text-align:right">Generado ${fd(HOY)} ${nowHM()}<br>por ${esc(U.user?U.user.nombre:'')}</div></div>
+ <div class="tpRepK">${[['Cargado',tpM(D.tot)],['Frente a '+R.ptxt,pct==null?'—':(pct>0?'▲ ':pct<0?'▼ ':'')+Math.abs(pct)+' %'],['Entregas',String(D.ent)],['Acumulado '+D.ya,tpM(D.anio)]].map(k=>`<div><span>${esc(k[0])}</span><b>${k[1]}</b></div>`).join('')}</div>
+ <div class="tpRepG"><div>${tpBarras(D,{grid:'#dfe3ee',tx3:'#7a8199',tx:'#1d2440'})}</div><div>${D.porFam.map(x=>`<div class="tpRepF"><i style="background:${x.c}"></i><span>${x.f}</span><b>${tpM(x.v)}</b></div>`).join('')}</div></div>
+ <b style="display:block;margin:12px 0 6px">Top 5 materiales</b><table class="tpRepT">${D.mats.slice(0,5).map((x,i)=>`<tr><td>${i+1}. ${esc(x.desc)}</td><td style="text-align:right">${tpQ(x.ent-x.dev)} ${esc(x.um)}</td><td style="text-align:right"><b>${tpCop(x.v)}</b></td></tr>`).join('')||'<tr><td>Sin materiales en el período.</td></tr>'}</table>
+ <div class="tpRepS" style="margin-top:12px">Costos de Siesa. El PDF trae además las familias, el top 10, quién pide y la trazabilidad completa; el Excel trae todo el detalle.</div></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button><button class="btn ghost" data-act="tpXls">${icon('xls',16)}Excel</button><button class="btn" data-act="tpPdf">${icon('pdf',16)}Descargar PDF</button></div>`,'l')};
+async function tpSvgPng(svg,w,h){return new Promise(res=>{try{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=w*2;c.height=h*2;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);res(c.toDataURL('image/png'))};img.onerror=()=>res(null);
+ img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg.replace('<svg ','<svg width="'+w+'" height="'+h+'" ').replace('width="100%"',''))}catch(e){res(null)}})}
+ACT.tpPdf=async()=>{if(!window.jspdf){toast('La librería de PDF no cargó. Revisa el internet y recarga la página.','er');return}
+ const D=tpDatos(),R=D.R;const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),X=14,AW=W-28;const nav=[36,52,107];
+ const pct=D.ptot?Math.round((D.tot-D.ptot)/Math.abs(D.ptot)*100):null;const txt=s=>String(s==null?'':s).replace(/[▲]/g,'+').replace(/[▼]/g,'-').replace(/[→]/g,'>');
+ d.setFont('helvetica','bold');d.setFontSize(15);d.setTextColor(...nav);d.text('INFORME DE COSTOS DEL TALLER',X,18);
+ d.setFont('helvetica','normal');d.setFontSize(9);d.setTextColor(90,100,128);d.text('LATAMKS S.A.S. · Zona Franca La Cayena · Período: '+R.txt+(TP.fam?' · '+TP.fam:''),X,24);
+ d.text('Generado '+fd(HOY)+' '+nowHM()+' por '+(U.user?U.user.nombre:''),W-X,18,{align:'right'});d.setDrawColor(...nav);d.setLineWidth(.6);d.line(X,27,W-X,27);
+ const K=[['Cargado',tpCop(D.tot)],['Frente a '+R.ptxt,pct==null?'—':(pct>0?'+':'')+pct+' %'],['Entregas al taller',String(D.ent)],['Materiales distintos',String(D.nmat)],['Promedio por día hábil',tpCop(D.dh?D.tot/D.dh:0)],['Acumulado '+D.ya,tpCop(D.anio)]];
+ const kw=AW/3;K.forEach((k,i)=>{const x=X+(i%3)*kw,y=31+Math.floor(i/3)*16;d.setDrawColor(223,227,238);d.setLineWidth(.3);d.roundedRect(x,y,kw-3,13,2,2);d.setFontSize(7.5);d.setTextColor(110,118,140);d.text(txt(k[0]),x+3,y+4.6);d.setFont('helvetica','bold');d.setFontSize(11);d.setTextColor(29,36,64);d.text(txt(k[1]),x+3,y+10.4);d.setFont('helvetica','normal')});
+ let y=65;const png=await tpSvgPng(tpBarras(D,{grid:'#dfe3ee',tx3:'#7a8199',tx:'#1d2440',pdf:true}),640,250);
+ d.setFont('helvetica','bold');d.setFontSize(10.5);d.setTextColor(29,36,64);d.text('Costo mes a mes por familia (12 meses)',X,y);y+=2;
+ if(png){d.addImage(png,'PNG',X,y,AW,AW*250/640);y+=AW*250/640+2}
+ let lx=X;TP_FAM.forEach(f=>{const c=parseInt(f[1].slice(1),16);d.setFillColor(c>>16,c>>8&255,c&255);d.rect(lx,y,3,3,'F');d.setFont('helvetica','normal');d.setFontSize(8);d.setTextColor(60,66,90);d.text(f[0],lx+4.5,y+2.6);lx+=d.getTextWidth(f[0])+11});y+=8;
+ const T=D.porFam.reduce((a,x)=>a+Math.max(0,x.v),0);const at=(o)=>d.autoTable(Object.assign({theme:'grid',styles:{fontSize:8,cellPadding:1.6,textColor:[29,36,64],lineColor:[223,227,238]},headStyles:{fillColor:nav,textColor:255,fontStyle:'bold'},margin:{left:X,right:X}},o));
+ at({startY:y,head:[['Familia','Entregas','Materiales','Costo','% del total',txt('Frente a '+R.ptxt)]],body:D.porFam.map(x=>[x.f,x.e,x.n,tpCop(x.v),(T?Math.round(Math.max(0,x.v)/T*100):0)+' %',x.pv?((x.v>=x.pv?'+':'')+Math.round((x.v-x.pv)/x.pv*100)+' %'):'—']),columnStyles:{1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'}}});
+ at({startY:d.lastAutoTable.finalY+6,head:[['#','Top 10 materiales','Familia','Neto','Costo','Acumulado']],body:(()=>{let a=0;const TT=D.mats.reduce((s,x)=>s+Math.max(0,x.v),0);return D.mats.filter(x=>x.v>0).slice(0,10).map((x,i)=>{a+=x.v;return[i+1,txt(x.desc),x.fam,tpQ(x.ent-x.dev)+' '+x.um,tpCop(x.v),(TT?Math.round(a/TT*100):0)+' %']})})(),columnStyles:{0:{cellWidth:8},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'}}});
+ at({startY:d.lastAutoTable.finalY+6,head:[['Quién pide','Área','Costo']],body:D.quien.slice(0,10).map(x=>[txt(x.n),txt(x.area),tpCop(x.v)]),columnStyles:{2:{halign:'right'}}});
+ if(D.alert.length)at({startY:d.lastAutoTable.finalY+6,head:[['Alertas (consumo del mes > 30 % sobre el promedio de 3 meses)']],body:D.alert.slice(0,8).map(a=>[txt(a.desc)+': +'+a.pct+' % ('+tpQ(a.now)+' contra '+tpQ(a.avg)+')']),headStyles:{fillColor:[180,83,9],textColor:255}});
+ d.addPage();d.setFont('helvetica','bold');d.setFontSize(11);d.setTextColor(29,36,64);d.text('Trazabilidad · '+R.txt,X,16);
+ at({startY:20,head:[['Fecha','Documento','Material','Familia','Cant.','Costo','Pidió','Área','Entregó']],body:D.F.slice().sort((a,b)=>(a.f+a.h)<(b.f+b.h)?1:-1).map(r=>[r.f+(r.h?' '+r.h:''),String(r.doc).split(' · ')[0],txt(r.desc),r.fam,tpQ(r.q)+' '+r.um,tpCop(r.v),txt(r.pidio),txt(r.area),txt(r.entrego)]),styles:{fontSize:7,cellPadding:1.2},columnStyles:{4:{halign:'right'},5:{halign:'right'}}});
+ const n=d.internal.getNumberOfPages();for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(120,126,150);d.text('Latamks Almacén · Informe del taller · costos de Siesa · página '+i+' de '+n,W/2,d.internal.pageSize.getHeight()-8,{align:'center'})}
+ await saveFile('Latamks_Informe_taller_'+R.d+'_a_'+R.h+'.pdf',d.output('blob'))};
+ACT.tpXls=async()=>{const D=tpDatos(),R=D.R;const T=D.porFam.reduce((a,x)=>a+Math.max(0,x.v),0);
+ await toXLSX('Latamks_Informe_taller_'+R.d+'_a_'+R.h,[
+  {name:'Resumen',cols:['Indicador','Valor'],rows:[['Período',R.txt],['Familia',TP.fam||'Todas'],['Cargado (neto)',Math.round(D.tot)],['Período anterior',Math.round(D.ptot)],['Variación %',D.ptot?Math.round((D.tot-D.ptot)/Math.abs(D.ptot)*100):''],['Entregas al taller',D.ent],['Materiales distintos',D.nmat],['Promedio por día hábil',Math.round(D.dh?D.tot/D.dh:0)],['Acumulado del año '+D.ya,Math.round(D.anio)],['Generado',HOY+' '+nowHM()+' · '+(U.user?U.user.nombre:'')]]},
+  {name:'Por familia',cols:['Familia','Entregas','Materiales','Costo','% del total','Período anterior'],rows:D.porFam.map(x=>[x.f,x.e,x.n,Math.round(x.v),T?Math.round(x.v/T*100):0,Math.round(x.pv)])},
+  {name:'Mes a mes',cols:['Mes',...TP_FAM.map(f=>f[0]),'Total'],rows:D.MM.map(x=>[x.k,...x.fam.map(Math.round),Math.round(x.tot)])},
+  {name:'Inventario cargado',cols:['Código','Material','Familia','UM','Entregado','Devuelto','Neto','Costo','Última entrega'],rows:D.mats.map(x=>[x.cod,x.desc,x.fam,x.um,x.ent,x.dev,x.ent-x.dev,Math.round(x.v),x.ult])},
+  {name:'Quién pide',cols:['Persona','Área','Costo'],rows:D.quien.map(x=>[x.n,x.area,Math.round(x.v)])},
+  {name:'Trazabilidad',cols:['Fecha','Hora','Documento','Tipo','Código','Material','Familia','Cantidad','UM','Costo unitario','Costo','Pidió','Área','Entregó','Bodega'],rows:D.F.map(r=>[r.f,r.h,r.doc,r.t,r.cod,r.desc,r.fam,r.q,r.um,r.cu,Math.round(r.v),r.pidio,r.area,r.entrego,r.bod])}])};
+ACT_DESCARGA.push('tpPdf','tpXls');
+
+/* ---------- Menú, buscador y datos ---------- */
+(()=>{if(NAV.some(n=>n.id==='taller'))return;const i=NAV.findIndex(n=>n.id==='planta');const pl=NAV[i]||{};
+ NAV.splice(i+1,0,{id:'taller',t:'Taller',ic:'tool',r:['Gerencia','Auxiliar','Producción','Calidad','Compras','Diseño','Auditoría','Inventario'],par:pl.par})})();
+try{NAVQ_CLAVES.taller='taller centro de costos consumibles activos mantenimiento gastos internos discos herramienta'}catch(e){}
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.user&&!(typeof KQ!=='undefined'&&KQ.on))await tpHoras();return r}}
+
+/* ---------- El 00000 no es un proyecto: fuera de las vistas de proyectos ---------- */
+['dash','proy','proyc','lib','kit','dis','mod','inf','corte'].forEach(id=>{const f=VIEWS[id];if(typeof f!=='function')return;VIEWS[id]=function(){const kp=S.proys,km=S.movs;
+ S.proys=kp.filter(p=>p.id!==TALLER_ID);S.movs=km.filter(m=>m.proy!==TALLER_ID);try{return f.apply(this,arguments)}finally{S.proys=kp;S.movs=km}}});
+['planta','kdx','traz'].forEach(id=>{const f=VIEWS[id];if(typeof f!=='function')return;VIEWS[id]=function(){return String(f.apply(this,arguments)).replace(/>00000</g,'>TALLER<')}});
+
+document.head.insertAdjacentHTML('beforeend',`<style>
+.tpg{display:grid;gap:18px;margin-bottom:18px}.tpg2{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}.tpg3{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tpg4{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media(max-width:1100px){.tpg2,.tpg3,.tpg4{grid-template-columns:1fr}}
+.tpLeg{display:flex;width:100%;align-items:center;gap:10px;padding:7px 4px;border:0;border-bottom:1px dashed var(--bd);background:none;color:inherit;font:inherit;font-size:13px;cursor:pointer;text-align:left;border-radius:6px}
+.tpLeg:hover,.tpLeg.on{background:var(--hov)}.tpLeg i{flex:none;width:11px;height:11px;border-radius:3px}.tpLeg span{flex:1;white-space:nowrap}.tpLeg b{white-space:nowrap}.tpLeg em{font-style:normal;color:var(--tx3);width:40px;text-align:right}
+.tpPar{display:grid;grid-template-columns:22px minmax(0,1fr) 84px 44px;gap:10px;align-items:center;font-size:12.5px}
+.tpEl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tpBar{height:7px;border-radius:5px;background:var(--bd);margin-top:4px;overflow:hidden}.tpBar i{display:block;height:100%;border-radius:5px}
+.tpAv{flex:none;width:34px;height:34px;border-radius:50%;background:#24346B;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:700}
+.tpFams{flex-wrap:wrap}
+@media(min-width:701px){.tpT td,.tpT th{white-space:nowrap}.tpT td[data-l="Material"],.tpT td.nm{white-space:normal;min-width:220px}}
+.tpActs{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}.tpActs .inp{max-width:230px}
+.tpRep{background:#fff;color:#1d2440;border:1px solid #dfe3ee;border-radius:12px;padding:20px 22px;font-size:12px;box-shadow:0 10px 30px rgba(0,0,0,.12)}
+.tpRepH{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:2px solid #24346B;padding-bottom:10px}.tpRepS{color:#5b6480;font-size:11px}
+.tpRepK{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.tpRepK div{border:1px solid #dfe3ee;border-radius:8px;padding:8px 10px}.tpRepK span{display:block;color:#5b6480;font-size:10.5px}.tpRepK b{font-size:15px}
+.tpRepG{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}.tpRepF{display:flex;gap:8px;padding:4px 0;border-bottom:1px dashed #dfe3ee}.tpRepF i{width:9px;height:9px;border-radius:2px;margin-top:3px;flex:none}.tpRepF span{flex:1}
+.tpRepT{width:100%;border-collapse:collapse;font-size:11px}.tpRepT td{padding:4px 0;border-bottom:1px solid #eef0f6}
+@media(max-width:700px){.tpRepK{grid-template-columns:repeat(2,minmax(0,1fr))}.tpRepG{grid-template-columns:1fr}.tpPar{grid-template-columns:18px minmax(0,1fr) 70px 38px}}
+</style>`);
 
 </script>
 </body>
