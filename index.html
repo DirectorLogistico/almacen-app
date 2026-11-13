@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.6.1 · bloque 6';
+const VERSION='4.6.2 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4418,7 +4418,7 @@ async function kqCargar(cod,ini){
  S=migrar(blankState());
  S.mats=(data.materiales||[]).map(m=>({cod:m.cod,item:'',desc:m.desc,um:m.um,fam:m.fam,costo:0,stk:m.cl?{MP001:+m.disp||0}:{AL001:+m.disp||0},ub:{},src:'Siesa',cl:!!m.cl}));
  const B={};(data.bom||[]).forEach(l=>{(B[l.proy]=B[l.proy]||[]).push({sec:l.sec,cod:l.cod,desc:l.desc,q:+l.q})});
- S.proys=(data.proyectos||[]).map(p=>({id:p.id,op:p.op,desc:p.desc,modelo:p.modelo,estado:'Activo',cliente:'',creado:HOY,entrega:'',ot:{estado:'Liberada'},bom:B[p.id]||[],fotos:0,mb:0}));
+ S.proys=(data.proyectos||[]).map(p=>({id:p.id,op:p.op,desc:p.desc,modelo:p.modelo,estado:'Activo',cliente:'',creado:HOY,entrega:'',ot:{estado:p.ot||'Liberada'},bom:B[p.id]||[],fotos:0,mb:0}));
  let n=0;S.movs=(data.usado||[]).map(u=>({id:++n,f:HOY,t:'Salida',cod:u.cod,desc:'',um:'',q:+u.q,bod:'AL001',proy:u.proy,op:'',doc:'',u:'',ej:false,cu:0}));
  /* v3.8: lo que el líder tiene en planta, para devolver o reportar daño */
  (data.entregado||[]).forEach(e=>{if(!S.mats.some(m=>m.cod===e.cod))S.mats.push({cod:e.cod,item:'',desc:e.desc,um:e.um,fam:e.fam,costo:0,stk:{AL001:0},ub:{},src:'Siesa'})});
@@ -6054,6 +6054,57 @@ document.head.insertAdjacentHTML('beforeend',`<style>
  nt.addEventListener('input',()=>sync('nit'));nt.addEventListener('change',()=>sync('nit'));pv.addEventListener('change',()=>sync('nom'));pv.addEventListener('input',()=>{if(provPorNom(pv.value))sync('nom')})}}
 {const _so=ACT.saveOC;ACT.saveOC=async(v,el)=>{const nt=$('#ocNit');if(nt&&nitNorm(nt.value).length<5){toast('Escribe el NIT del proveedor (así queda registrado para el recibo de mercancía).','er');nt.focus();return}return _so(v,el)}}
 {const _rpc=SB.rpc.bind(SB);SB.rpc=function(fn,args,o){if(fn==='alm_oc_crear'&&args&&args.p&&!args.p.nit){const nt=$('#ocNit');if(nt&&nt.value)args=Object.assign({},args,{p:Object.assign({},args.p,{nit:nt.value})})}return _rpc(fn,args,o)}}
+
+/* ================= v4.6.2 · Consumibles antes del BOM y solicitudes para TALLER · SQL 24 =================
+   · «00000 · TALLER»: consumibles del taller que no son de ningún proyecto. Funciona como un proyecto
+     más (su costo se acumula), pero solo deja pedir la familia «Consumibles».
+   · Proyecto con la OT sin liberar (por ejemplo, sin BOM todavía): se pueden pedir consumibles y EPP,
+     cargados a ese proyecto. El resto espera a que Gerencia libere la OT.
+   · Aplica igual en «Nueva solicitud» de la app y en el QR del taller. La base valida lo mismo. */
+const TALLER_ID='00000';
+const esTaller=p=>!!p&&p.id===TALLER_ID;
+const sinOT=p=>!!p&&!esTaller(p)&&p.ot&&p.ot.estado!=='Liberada';
+const tabsPermitidas=p=>esTaller(p)?['cons']:sinOT(p)?['cons','epp']:null;
+const famPermitidas=p=>esTaller(p)?['Consumibles']:sinOT(p)?['Consumibles','EPP']:null;
+
+/* Si el proyecto TALLER no existe (por ejemplo, después de «Borrar todo»), se vuelve a crear */
+let TALLER_INTENTO=false;
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);
+ try{if(U.user&&!(typeof KQ!=='undefined'&&KQ.on)&&!TALLER_INTENTO&&Array.isArray(S.proys)&&!S.proys.some(p=>p.id===TALLER_ID)){TALLER_INTENTO=true;
+  const {error}=await SB.rpc('alm_taller_asegurar');if(!error)return await _cd.apply(this,arguments)}}catch(e){}
+ return r}}
+
+{const _rk=renderKiosk;renderKiosk=function(){
+ const p=K.proy&&P(K.proy);const tp=K.step===4&&K.mode==='pedir'?tabsPermitidas(p):null;
+ if(tp&&(!K.tab||!tp.includes(K.tab)))K.tab=tp[0];
+ _rk();
+ /* Paso 3: lista de proyectos para pedir (incluye TALLER y los de OT sin liberar) */
+ if(K.step===3&&K.mode==='pedir'){const box=$('.kcard .kopts');if(box){
+  const act=S.proys.filter(x=>x.estado==='Activo');
+  const L=[...act.filter(esTaller),...act.filter(x=>!esTaller(x)&&otOK(x)),...act.filter(x=>!esTaller(x)&&!otOK(x))];
+  box.innerHTML=L.map(x=>esTaller(x)
+   ?`<button class="kopt" data-act="k2" data-v="${x.id}"><span class="pnum">TALLER</span><span>Consumibles del taller · no es de ningún proyecto</span></button>`
+   :`<button class="kopt" data-act="k2" data-v="${x.id}"><span class="pnum">${x.id}</span><span>${esc(x.desc)} · ${esc(x.op)}${!otOK(x)?`<small style="display:block;margin-top:4px;color:var(--wa);font-weight:600">OT sin liberar · por ahora solo consumibles y EPP</small>`:''}</span></button>`).join('');
+  $$('.kcard p.mut3').forEach(x=>{if(/no aparecen/.test(x.textContent))x.remove()})}}
+ /* Paso 4: solo las pestañas y familias permitidas */
+ if(tp){
+  $$('[data-act="kTab"]').forEach(b=>{if(!tp.includes(b.dataset.v))b.remove()});
+  const fp=famPermitidas(p);$$('[data-kc]').forEach(x=>{const m=MI[x.dataset.kc];if(m&&!fp.includes(m.fam)){const r=x.closest('.kli');if(r)r.remove()}});
+  const h=$('.kcard h2');
+  if(h){if(esTaller(p)){const n=h.querySelector('.pnum');if(n)n.textContent='TALLER'}
+   if(!$('#kTallerNota'))h.insertAdjacentHTML('afterend',`<div class="note" id="kTallerNota" style="margin:6px 0 10px">${icon('info',16)}<span>${esTaller(p)
+    ?'Solicitud para el <b>TALLER</b>: solo <b>consumibles</b> (discos, lijas, soldadura, gases…). Su costo se acumula en «TALLER».'
+    :`La OT del <b>${esc(p.id)}</b> todavía no está liberada: por ahora puedes pedir <b>consumibles y EPP</b>, cargados a este proyecto. Los componentes del BOM se piden cuando Gerencia libere la OT.`}</span></div>`)}}
+ if(K.step===5&&K.mode==='pedir'&&esTaller(p)){const b=$('.kcard p.mut b');if(b&&b.textContent===TALLER_ID)b.textContent='TALLER'}}}
+
+/* Antes de enviar: la misma regla que la base, para avisar sin esperar */
+{const _k5=ACT.k5;ACT.k5=async(v,el)=>{const p=K.proy&&P(K.proy);const fp=famPermitidas(p);
+ if(fp){const bad=Object.keys(K.sel).filter(c=>{const m=MI[c];return !m||!fp.includes(m.fam)});
+  if(bad.length){toast((esTaller(p)?'Para TALLER solo se piden consumibles: quita ':'La OT del '+p.id+' no está liberada: solo consumibles y EPP. Quita ')+bad.slice(0,3).map(esc).join(', ')+'.','er');return}}
+ return _k5(v,el)}}
+
+/* En las tarjetas de Solicitudes, el 00000 se lee «TALLER» */
+{const _vs=VIEWS.sol;if(_vs)VIEWS.sol=function(){return String(_vs.apply(this,arguments)).replace(/>00000</g,'>TALLER<')}}
 
 </script>
 </body>
