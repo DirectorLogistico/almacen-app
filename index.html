@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.8.1 · bloque 6';
+const VERSION='4.9.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -6442,6 +6442,207 @@ if(TPL&&TPL.oc&&!TPL.oc.cols.includes('NIT')){TPL.oc.cols.splice(2,0,'NIT');TPL.
  const sin=d.L.filter(g=>!g.nit&&!(typeof provPorNom==='function'&&provPorNom(g.prov)));d.sinNit=sin.map(g=>g.num);return d}}
 {const _pv=IMPF.oc.prev;IMPF.oc.prev=function(d){let h=_pv.apply(this,arguments);if(d&&d.ok&&d.sinNit&&d.sinNit.length)h=`<div class="note wa">${icon('warn',16)}<span>${d.sinNit.length} orden(es) sin NIT y con un proveedor que todavía no está registrado (${esc(d.sinNit.slice(0,5).join(', '))}). Se cargan igual; agrega la columna NIT para que el recibo de mercancía reconozca al proveedor.</span></div>`+h;return h}}
 {const _ad=IMPF.oc.applyDb;IMPF.oc.applyDb=async function(d){const {data,error}=await SB.rpc('alm_oc_importar',{p:d.L.map(g=>({num:g.num,prov:g.prov,nit:g.nit||'',fecha:g.f||'',lineas:g.lineas.map(l=>({cod:l.cod,ped:l.ped,pu:l.pu||0}))}))});if(error)throw error;return(data.ids||[]).length+' orden(es) de compra cargadas: '+(data.ids||[]).join(', ')+'.'}}
+
+/* =====================================================================
+   v4.9.0 · Estilo del panel Taller en el Tablero y en Láminas y corte (decisión 98)
+   - Tablero: nueva pestaña «Panel gerencial» (queda primero); las pestañas
+     «Gerencial · inventario en proceso» y «Operación del almacén» siguen igual.
+   - Láminas y corte: panel visual arriba (reemplaza la fila de 4 indicadores);
+     órdenes de corte, retal y chatarra siguen igual debajo.
+   Solo lee datos que la app ya cargó (S.movs, S.mats, S.cortes, RET, RMOV…):
+   no guarda nada ni cambia la base de datos.
+   ===================================================================== */
+const ES={dp:'mes',dproy:'',cp:'mes',cesp:'',ang:{}};
+const ES_PER=[['mes','Mes'],['tri','Trimestre'],['ano','Año'],['m12','12 meses']];
+const ES_FAM=[['Materia prima','#5B7DB8'],['Accesorios','#10B981'],['Consumibles','#24346B'],['EPP','#F59E0B'],['Herramienta','#8B5CF6'],['Dotación','#06B6D4'],['Otros','#94A3B8']];
+const ES_PAL=['#24346B','#5B7DB8','#10B981','#F59E0B','#8B5CF6','#06B6D4','#E8590C','#94A3B8'];
+const esFam=f=>ES_FAM.some(x=>x[0]===f)?f:'Otros';
+const esFc=f=>(ES_FAM.find(x=>x[0]===esFam(f))||ES_FAM[6])[1];
+const esM=v=>{v=v||0;const a=Math.abs(v),g=v<0?'-':'';return a>=1e9?g+'$ '+Math.round(a/1e6).toLocaleString('es-CO')+' M':tpM(v)};
+const esKg=v=>Math.round(v||0).toLocaleString('es-CO')+' kg';
+const esPct=v=>v==null||!isFinite(v)?'—':(Math.round(v*1000)/10).toLocaleString('es-CO')+' %';
+/* Rango del período, y el mismo corte del período anterior */
+function esRango(per){const y=+HOY.slice(0,4),m=+HOY.slice(5,7);const pad=n=>String(n).padStart(2,'0');let d,pd,ph,txt,ptxt;
+ if(per==='mes'){d=HOY.slice(0,8)+'01';const py=m===1?y-1:y,pm=m===1?12:m-1;pd=`${py}-${pad(pm)}-01`;ph=tpAdd(pd,Math.round((tpD(HOY)-tpD(d))/864e5));const fin=tpFin(py,pm);if(ph>fin)ph=fin;txt=TP_MESL[m-1]+' '+y;ptxt=TP_MESL[pm-1]+' (mismo corte)'}
+ else if(per==='tri'){const q=Math.floor((m-1)/3);d=`${y}-${pad(q*3+1)}-01`;const py=q?y:y-1,pq=q?q-1:3;pd=`${py}-${pad(pq*3+1)}-01`;ph=tpAdd(pd,Math.round((tpD(HOY)-tpD(d))/864e5));txt=`trimestre ${q+1} de ${y}`;ptxt=`trimestre ${pq+1} (mismo corte)`}
+ else if(per==='ano'){d=`${y}-01-01`;pd=`${y-1}-01-01`;ph=`${y-1}`+HOY.slice(4);txt=`año ${y}`;ptxt=`${y-1} (mismo corte)`}
+ else{d=tpAdd(HOY,-364);pd=tpAdd(d,-365);ph=tpAdd(d,-1);txt='últimos 12 meses';ptxt='los 12 meses anteriores'}
+ return{d,h:HOY,pd,ph,txt,ptxt}}
+function esMeses(n){let y=+HOY.slice(0,4),m=+HOY.slice(5,7);const o=[];for(let i=0;i<n;i++){o.unshift({k:`${y}-${String(m).padStart(2,'0')}`,lab:TP_MES[m-1]});m--;if(m<1){m=12;y--}}return o}
+const esVacio=t=>`<div class="mut3" style="padding:26px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:13px">${icon('info',20)}<span>${t}</span></div>`;
+const esCard=(t,sub,body,ex='')=>`<div class="card"><div class="ch"><div><h3>${t}</h3><p>${sub}</p></div>${ex}</div>${body}</div>`;
+const esGrid=(cols,...cs)=>`<div class="esg" style="display:grid;grid-template-columns:${cols};gap:18px;margin-bottom:18px">${cs.join('')}</div>`;
+const esLeyenda=L=>`<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">${L.map(f=>`<span style="display:flex;gap:6px;align-items:center;font-size:12px"><i style="width:10px;height:10px;border-radius:3px;background:${f[1]}"></i>${esc(f[0])}</span>`).join('')}</div>`;
+const esHero=(t,p,K)=>`<section class="phero"><div class="phl"><div class="live"><i></i>En vivo · ${fd(HOY)} ${nowHM()}</div><h1>${t}</h1><p>${p}</p></div><div class="pkpis">${K.map(k=>`<div class="pk ${k[3]||''}"><span>${k[0]}</span><b>${k[1]}</b><small>${k[2]}</small></div>`).join('')}</div></section>`;
+/* Barras apiladas: D=[{lab,v:[..],k}] */
+function esStack(D,cols,F,act){const W=640,H=250,pl=50,pb=26;const tot=r=>r.v.reduce((a,b)=>a+Math.max(0,b),0);const mx=Math.max(1,...D.map(tot))*1.12,n=D.length,bw=(W-pl-10)/n*.62;
+ if(!D.some(r=>tot(r)>0))return esVacio('Todavía no hay movimientos para graficar.');
+ let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">`;
+ for(let g=0;g<=4;g++){const y=H-pb-(H-pb-10)*g/4;s+=`<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--bd)" stroke-dasharray="3 4"/><text x="${pl-8}" y="${y+4}" font-size="10.5" fill="var(--tx3)" text-anchor="end">${F(mx*g/4).replace('$ ','')}</text>`}
+ D.forEach((r,i)=>{let y=H-pb;const x=pl+(W-pl-10)/n*i+((W-pl-10)/n-bw)/2;const last=i===n-1;
+  s+=`<g ${act?`data-act="${act}" data-v="${r.k}" style="cursor:pointer"`:''}><title>${esc(r.lab)}: ${F(tot(r))}</title><rect x="${x-4}" y="10" width="${bw+8}" height="${H-pb-10}" fill="transparent"/>`;
+  r.v.forEach((v,f)=>{if(v<=0)return;const h=(H-pb-10)*v/mx;y-=h;s+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" fill="${cols[f]}" opacity="${last||r.on?1:.82}"/>`});
+  s+=`<text x="${x+bw/2}" y="${H-8}" font-size="11" fill="var(--tx3)" text-anchor="middle" font-weight="${last||r.on?700:400}">${r.lab}</text>`;
+  if((last||r.on)&&tot(r)>0)s+=`<text x="${x+bw/2}" y="${y-6}" font-size="10.5" font-weight="700" fill="var(--tx)" text-anchor="middle">${F(tot(r))}</text>`;s+='</g>'});
+ return s+'</svg>'}
+/* Dona con leyenda: L=[{n,v,c,k}] */
+function esDona(L,centro,sub,F,act){L=L.filter(x=>x.v>0);const T=L.reduce((a,x)=>a+x.v,0);if(T<=0)return esVacio('Sin datos en este momento.');
+ let a0=-Math.PI/2,s='<svg viewBox="0 0 200 200" width="180" height="180" style="flex:none">';
+ L.forEach(x=>{const a1=a0+Math.min(x.v/T,.9999)*Math.PI*2,R=88,ri=58,lg=a1-a0>Math.PI?1:0,P=(a,r)=>[100+r*Math.cos(a),100+r*Math.sin(a)];const [x0,y0]=P(a0,R),[x1,y1]=P(a1,R),[x2,y2]=P(a1,ri),[x3,y3]=P(a0,ri);
+  s+=`<path d="M${x0} ${y0}A${R} ${R} 0 ${lg} 1 ${x1} ${y1}L${x2} ${y2}A${ri} ${ri} 0 ${lg} 0 ${x3} ${y3}Z" fill="${x.c}" stroke="var(--card)" stroke-width="2" ${act&&x.k?`data-act="${act}" data-v="${esc(x.k)}" style="cursor:pointer"`:''}><title>${esc(x.n)}: ${F(x.v)}</title></path>`;a0=a1});
+ s+=`<text x="100" y="95" text-anchor="middle" font-size="11.5" fill="var(--tx3)">${sub}</text><text x="100" y="117" text-anchor="middle" font-size="18" font-weight="800" fill="var(--tx)">${centro}</text></svg>`;
+ return`<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">${s}<div style="flex:1;min-width:180px">${L.map(x=>`<div ${act&&x.k?`data-act="${act}" data-v="${esc(x.k)}" style="cursor:pointer;`:'style="'}display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--bd);font-size:13px"><i style="flex:none;width:11px;height:11px;border-radius:3px;background:${x.c}"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.n)}</span><b>${F(x.v)}</b><span class="mut3" style="width:40px;text-align:right">${Math.round(x.v/T*100)}%</span></div>`).join('')}</div></div>`}
+/* Flujo (sankey) por columnas con enlaces explícitos: N=[[{id,n,c}],...], E=[{a,b,v}] */
+function esSankey(N,E,F){E=E.filter(e=>e.v>0);const T=E.filter(e=>N[0].some(n=>n.id===e.a)).reduce((a,e)=>a+e.v,0);if(T<=0)return esVacio('Sin movimientos en este período.');
+ const W=640,H=300,gap=9;const val=(id,ci)=>ci===0?E.filter(e=>e.a===id).reduce((a,e)=>a+e.v,0):E.filter(e=>e.b===id).reduce((a,e)=>a+e.v,0);
+ const L=N.map((col,ci)=>{col=col.map(n=>({...n,v:val(n.id,ci)})).filter(n=>n.v>0);const avail=H-10-gap*Math.max(0,col.length-1);const tc=col.reduce((a,n)=>a+n.v,0)||1;let y=5;
+  const x=ci===0?8:ci===N.length-1?W-22:(W-30)*ci/(N.length-1)+8;return col.map(n=>{const h=Math.max(3,avail*n.v/tc);const o={...n,x,y,h,o1:0,o2:0,sc:h/n.v};y+=h+gap;return o})});
+ const byId=ci=>Object.fromEntries(L[ci].map(n=>[n.id,n]));let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">`;
+ for(let c=0;c<L.length-1;c++){const A=byId(c),B=byId(c+1);E.forEach(e=>{const a=A[e.a],b=B[e.b];if(!a||!b)return;const ha=e.v*a.sc,hb=e.v*b.sc,y0=a.y+a.o2,y1=b.y+b.o1;a.o2+=ha;b.o1+=hb;const x0=a.x+14,x1=b.x,m=(x0+x1)/2;
+  s+=`<path d="M${x0} ${y0}C${m} ${y0} ${m} ${y1} ${x1} ${y1}L${x1} ${y1+hb}C${m} ${y1+hb} ${m} ${y0+ha} ${x0} ${y0+ha}Z" fill="${c===0?b.c:a.c}" opacity=".26"><title>${esc(a.n)} → ${esc(b.n)}: ${F(e.v)}</title></path>`})}
+ L.forEach((col,ci)=>col.forEach(n=>{const last=ci===L.length-1;s+=`<rect x="${n.x}" y="${n.y}" width="14" height="${n.h}" rx="3" fill="${n.c}"><title>${esc(n.n)}: ${F(n.v)}</title></rect><text x="${last?n.x-6:n.x+20}" y="${n.y+n.h/2+4}" font-size="11" fill="var(--tx)" ${last?'text-anchor="end"':''} ${ci===0?'font-weight="600"':''}>${esc(n.n)} · ${Math.round(n.v/T*100)}%</text>`}));
+ return s+'</svg>'}
+/* Barras horizontales: L=[[nombre, valor, color, sub, texto]] */
+function esHbars(L,F){if(!L.length)return esVacio('Sin datos en este momento.');const mx=Math.max(1e-9,...L.map(x=>x[1]));
+ return`<div style="display:grid;gap:10px">${L.map(x=>`<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) 92px;gap:10px;align-items:center;font-size:12.5px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b>${esc(x[0])}</b>${x[3]?`<div class="mut3" style="font-size:11px;overflow:hidden;text-overflow:ellipsis">${esc(x[3])}</div>`:''}</div><div style="height:9px;border-radius:6px;background:var(--bd);overflow:hidden"><i style="display:block;height:100%;width:${Math.max(0,x[1])/mx*100}%;background:${x[2]};border-radius:6px"></i></div><b style="text-align:right">${x[4]||F(x[1])}</b></div>`).join('')}</div>`}
+function esRing(p,c,lab,sub){const r=34,C=2*Math.PI*r,q=Math.max(0,Math.min(1,p||0));return`<div style="text-align:center;min-width:110px"><svg viewBox="0 0 90 90" width="90" height="90"><circle cx="45" cy="45" r="${r}" fill="none" stroke="var(--bd)" stroke-width="9"/><circle cx="45" cy="45" r="${r}" fill="none" stroke="${c}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C*q} ${C}" transform="rotate(-90 45 45)"/><text x="45" y="50" text-anchor="middle" font-size="15" font-weight="800" fill="var(--tx)">${Math.round(q*100)}%</text></svg><div style="font-weight:700;font-size:13px">${esc(lab)}</div><div class="mut3" style="font-size:11.5px">${esc(sub)}</div></div>`}
+/* 3D de columnas en un canvas: Z[i][j] (i = eje X, j = serie), se gira arrastrando */
+const ES3={};
+function es3d(id){const cv=document.getElementById(id),D=ES3[id];if(!cv||!D)return;const ctx=cv.getContext('2d'),dpr=window.devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W||!H)return;
+ cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);const Z=D.Z,nx=Z.length,ny=D.cols.length,mx=Math.max(1e-9,...Z.flat());
+ if(!(mx>1e-9)){ctx.fillStyle='rgba(120,130,160,.9)';ctx.font='13px Manrope,system-ui';ctx.textAlign='center';ctx.fillText('Sin datos para el 3D todavía.',W/2,H/2);return}
+ const ang=ES.ang[id]==null?-.35:ES.ang[id],ca=Math.cos(ang),sa=Math.sin(ang),sc=Math.min(W/(nx+ny+5)*1.15,H/15),cx=W/2,cy=H*.6;
+ const P=(x,y,z)=>{const X=x-nx/2,Y=y-ny/2,xr=X*ca-Y*sa,yr=X*sa+Y*ca;return[cx+(xr-yr)*.866*sc,cy+(xr+yr)*.5*sc-z*sc,xr+yr]};
+ const sh=(h,k)=>{const n=parseInt(h.slice(1),16);return`rgb(${Math.min(255,(n>>16)*k)|0},${Math.min(255,(n>>8&255)*k)|0},${Math.min(255,(n&255)*k)|0})`};
+ ctx.lineWidth=1;ctx.strokeStyle='rgba(120,130,160,.25)';for(let i=0;i<=nx;i++){const a=P(i,0,0),b=P(i,ny,0);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke()}for(let j=0;j<=ny;j++){const a=P(0,j,0),b=P(nx,j,0);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke()}
+ const B=[];for(let i=0;i<nx;i++)for(let j=0;j<ny;j++)B.push({i,j,h:Z[i][j]/mx*7.5,d:P(i+.5,j+.5,0)[2]});B.sort((a,b)=>a.d-b.d);
+ B.forEach(b=>{if(b.h<=0)return;const x0=b.i+.18,x1=b.i+.82,y0=b.j+.18,y1=b.j+.82,c=D.cols[b.j];
+  [[[x0,y0],[x1,y0]],[[x1,y0],[x1,y1]],[[x1,y1],[x0,y1]],[[x0,y1],[x0,y0]]].map(f=>({f,d:P((f[0][0]+f[1][0])/2,(f[0][1]+f[1][1])/2,0)[2]})).sort((a,b)=>a.d-b.d).forEach(({f},k)=>{const p=[P(f[0][0],f[0][1],0),P(f[1][0],f[1][1],0),P(f[1][0],f[1][1],b.h),P(f[0][0],f[0][1],b.h)];ctx.fillStyle=sh(c,k%2?.78:.62);ctx.beginPath();p.forEach((q,n)=>n?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fill()});
+  const t=[P(x0,y0,b.h),P(x1,y0,b.h),P(x1,y1,b.h),P(x0,y1,b.h)];ctx.fillStyle=sh(c,1.12);ctx.beginPath();t.forEach((q,n)=>n?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fill()});
+ ctx.font='600 11px Manrope,system-ui';ctx.textAlign='left';ctx.fillStyle='rgba(110,120,150,.95)';D.labX.forEach((m,i)=>{const p=P(i+.5,ny+.9,0);ctx.fillText(m,p[0]-10,p[1]+4)});D.labY.forEach((f,j)=>{const p=P(nx+.4,j+.5,0);ctx.fillStyle=D.cols[j];ctx.fillText(f,p[0]+4,p[1]+4)})}
+function es3dEventos(id){const cv=document.getElementById(id);if(!cv||cv.dataset.ev)return;cv.dataset.ev='1';let x0=null;
+ const ini=x=>{x0=x;cv.style.cursor='grabbing'},mov=x=>{if(x0==null)return;ES.ang[id]=(ES.ang[id]==null?-.35:ES.ang[id])+(x-x0)/140;x0=x;es3d(id)},fin=()=>{x0=null;cv.style.cursor='grab'};
+ cv.addEventListener('mousedown',e=>ini(e.clientX));window.addEventListener('mousemove',e=>mov(e.clientX));window.addEventListener('mouseup',fin);
+ cv.addEventListener('touchstart',e=>ini(e.touches[0].clientX),{passive:true});cv.addEventListener('touchmove',e=>mov(e.touches[0].clientX),{passive:true});cv.addEventListener('touchend',fin)}
+const es3dCanvas=id=>`<canvas id="${id}" style="width:100%;height:290px;display:block;cursor:grab;touch-action:pan-y" aria-label="Gráfica 3D"></canvas>`;
+document.head.insertAdjacentHTML('beforeend','<style>@media(max-width:1000px){.esg{grid-template-columns:1fr!important}}.esg>.card{margin:0;min-width:0}</style>');
+
+/* ============================ TABLERO ============================ */
+const esEsProy=p=>p&&p!==TALLER_ID;
+function esMovsProy(){/* entregas netas a proyectos (sin TALLER): Salida +, Devolución −, Ajuste WIP ± */
+ return S.movs.filter(m=>esEsProy(m.proy)&&!m.anul&&(m.t==='Salida'||m.t==='Devolución'||m.t==='Ajuste WIP')).map(m=>{const s=m.t==='Devolución'?-1:m.t==='Ajuste WIP'&&m.aj==='-'?-1:1;const mt=M(m.cod);
+  return{f:String(m.f).slice(0,10),t:m.t,s,cod:m.cod,proy:m.proy,bod:m.bod||'AL001',fam:esFam(mt.fam),v:s*(+m.q||0)*(+m.cu||0),q:s*(+m.q||0)}})}
+function esDash(){const R=esRango(ES.dp),act=S.proys.filter(p=>esEsProy(p.id)&&p.estado==='Activo');const ok=r=>!ES.dproy||r.proy===ES.dproy;
+ const T=esMovsProy().filter(ok),sum=a=>a.reduce((x,r)=>x+r.v,0);const F=T.filter(r=>r.f>=R.d&&r.f<=R.h),Pv=T.filter(r=>r.f>=R.pd&&r.f<=R.ph);
+ const wip=act.map((p,i)=>({id:p.id,n:p.id+' · '+(p.desc||p.modelo||''),v:sum(T.filter(r=>r.proy===p.id)),c:ES_PAL[i%ES_PAL.length]}));
+ const valAlm=S.mats.reduce((a,m)=>a+stk(m)*(+m.costo||0),0),refs=S.mats.filter(m=>stk(m)>0).length;
+ const ab=S.sols.filter(s=>s.proy!==TALLER_ID&&['Pendiente','En preparación','Por aprobar'].includes(s.estado));const fv=ab.filter(s=>s.fv).length;
+ const bm=typeof bajoMin==='function'?bajoMin():[];const ex=typeof exactitud==='function'?exactitud():null;
+ const MM=esMeses(12).map(x=>({lab:x.lab,k:x.k,v:ES_FAM.map(f=>sum(T.filter(r=>r.f.slice(0,7)===x.k&&r.fam===f[0])))}));
+ return{R,F,Pv,T,wip,valAlm,refs,ab,fv,bm,ex,MM,tot:sum(F),ptot:sum(Pv),act}}
+function esPanelDash(){const D=esDash(),R=D.R;const wipT=D.wip.reduce((a,x)=>a+x.v,0);const pct=D.ptot?Math.round((D.tot-D.ptot)/Math.abs(D.ptot)*100):null;
+ const fams=ES_FAM.filter((f,j)=>D.MM.some(m=>m.v[j]>0));
+ /* 3D: últimos 8 meses × familias con datos */
+ const M8=D.MM.slice(-8);const fj=ES_FAM.map((f,j)=>j).filter(j=>M8.some(m=>m.v[j]>0));ES3.es3dDash={Z:M8.map(m=>fj.map(j=>Math.max(0,m.v[j]))),cols:fj.map(j=>ES_FAM[j][1]),labX:M8.map(m=>m.lab),labY:fj.map(j=>ES_FAM[j][0])};
+ /* Flujo: bodega → familia → proyecto (solo salidas del período) */
+ const Sal=D.F.filter(r=>r.s>0&&r.v>0);const E=[];const add=(a,b,v)=>{const e=E.find(x=>x.a===a&&x.b===b);e?e.v+=v:E.push({a,b,v})};Sal.forEach(r=>{add('b:'+r.bod,'f:'+r.fam,r.v);add('f:'+r.fam,'p:'+r.proy,r.v)});
+ const bods=[...new Set(Sal.map(r=>r.bod))],fsel=[...new Set(Sal.map(r=>r.fam))],psel=[...new Set(Sal.map(r=>r.proy))];
+ const flujo=esSankey([bods.map(b=>({id:'b:'+b,n:b==='MP001'?'MP001 · piezas':b==='AL001'?'AL001 · almacén':b,c:'#94A3B8'})),fsel.map(f=>({id:'f:'+f,n:f,c:esFc(f)})),psel.map((p,i)=>({id:'p:'+p,n:p,c:(D.wip.find(w=>w.id===p)||{}).c||ES_PAL[i%ES_PAL.length]}))],E,esM);
+ /* Avance del BOM */
+ const rings=D.act.filter(p=>!ES.dproy||p.id===ES.dproy).map(p=>{let a=null;try{a=avance(p)}catch(e){}return{p,a}}).filter(x=>x.a&&x.a.ln).slice(0,4);
+ /* Clase A: referencias que suman el 80 % del valor en almacén */
+ const V=S.mats.map(m=>({m,v:stk(m)*(+m.costo||0)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);const VT=V.reduce((a,x)=>a+x.v,0);let ac=0;const A=[];for(const x of V){if(ac>=VT*.8&&A.length)break;ac+=x.v;A.push(x)}
+ /* Qué revisar hoy */
+ const sinCosto=S.mats.filter(m=>stk(m)>0&&!(+m.costo>0)).length;const al=[];
+ if(D.ab.length)al.push(['wa',D.ab.length+' solicitud'+(D.ab.length>1?'es esperan':' espera')+' entrega o aprobación',D.fv?D.fv+' fuera de ventana':'Solicitudes','sol']);
+ if(D.bm.length)al.push(['er',D.bm.length+' referencia'+(D.bm.length>1?'s':'')+' bajo el mínimo','Mínimos y reposición','rep']);
+ if(sinCosto)al.push(['wa',sinCosto+' material'+(sinCosto>1?'es':'')+' con existencia y sin costo de Siesa','Suman $ 0 en costos · Materiales','mat']);
+ if(pct!=null&&pct>30)al.push(['wa','Las entregas subieron '+pct+' %','frente a '+R.ptxt,'']);
+ if(!al.length)al.push(['','Todo al día','Sin solicitudes abiertas, faltantes de mínimo ni materiales sin costo.','']);
+ const sel=`<select class="sel" id="esDP" style="max-width:260px"><option value="">Todos los proyectos activos</option>${D.act.map(p=>`<option value="${p.id}" ${p.id===ES.dproy?'selected':''}>${p.id} · ${esc((p.desc||'').slice(0,28))}</option>`).join('')}</select>`;
+ return esHero('Tablero gerencial','Inventario en proceso, entregas a producción y salud del almacén. Costo de Siesa, al instante.',[
+   ['Inventario en proceso',esM(wipT),D.act.length+' tanque'+(D.act.length===1?'':'s')+' activo'+(D.act.length===1?'':'s')+' · sin TALLER'],
+   ['Entregado · '+R.txt,esM(D.tot),pct==null?'neto de devoluciones':(pct>0?'▲ ':pct<0?'▼ ':'')+Math.abs(pct)+' % frente a '+R.ptxt,pct!=null&&pct>30?'w':''],
+   ['Valor en almacén',esM(D.valAlm),D.refs+' referencias con existencia'],
+   ['Exactitud de conteos',D.ex==null?'—':esPct(D.ex),D.ex==null?'sin conteos todavía':'últimos conteos cíclicos'],
+   ['Solicitudes abiertas',String(D.ab.length),D.fv?D.fv+' fuera de ventana':'de proyectos',D.ab.length?'w':''],
+   ['Bajo el mínimo',String(D.bm.length),'referencias por reponer',D.bm.length?'w':'']])
+ +`<div class="fbar" style="flex-wrap:wrap;gap:10px"><div class="seg">${ES_PER.map(p=>`<button class="${ES.dp===p[0]?'on':''}" data-act="esDP" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>${sel}<div class="sp"></div><span class="mut3" style="font-size:12.5px">Para descargar: «Informe ejecutivo» (arriba a la derecha)</span></div>`
+ +esGrid('minmax(0,1.5fr) minmax(0,1fr)',esCard('Entregado a producción mes a mes','Por familia · 12 meses · neto de devoluciones'+(ES.dproy?' · '+ES.dproy:''),esStack(D.MM.map(m=>({...m,on:ES.dp==='mes'&&m.k===HOY.slice(0,7)})),ES_FAM.map(f=>f[1]),esM)+esLeyenda(fams.length?fams:ES_FAM.slice(0,3))),
+   esCard('Inventario en proceso por tanque','Material entregado y no devuelto · toca un tanque para filtrar',esDona(D.wip.map(x=>({n:x.n,v:x.v,c:x.c,k:x.id})),esM(wipT),'En proceso',esM,'esProy')))
+ +esGrid('minmax(0,1fr) minmax(0,1fr)',esCard('Vista 3D · meses × familias','La altura es el valor entregado. Arrastra para girar.',es3dCanvas('es3dDash'),'<span class="bd">3D</span>'),
+   esCard('Flujo del material','Bodega → familia → tanque · '+esc(R.txt),flujo))
+ +esGrid('minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)',esCard('Avance de materiales','Líneas del BOM completas por tanque',rings.length?`<div style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:10px;padding:6px 0">${rings.map((x,i)=>esRing(x.a.lin,ES_PAL[i%ES_PAL.length],x.p.id,x.a.lok+' de '+x.a.ln+' líneas')).join('')}</div>`:esVacio('Ningún tanque activo tiene BOM cargado.')),
+   esCard('Clase A del inventario','Referencias que suman el 80 % del valor en almacén',esHbars(A.slice(0,6).map(x=>[x.m.desc||x.m.cod,x.v,esFc(x.m.fam),x.m.cod+' · '+(x.m.fam||'')]),esM)+(A.length>6?`<p class="mut3" style="font-size:12px;margin-top:8px">${A.length} referencias en la clase A · ${esPct(VT?A.reduce((a,x)=>a+x.v,0)/VT:0)} del valor</p>`:'')),
+   esCard('Qué revisar hoy','Alertas ordenadas por impacto',al.slice(0,4).map(a=>`<div class="note ${a[0]}" style="margin-bottom:8px;${a[3]?'cursor:pointer':''}" ${a[3]?`data-act="go" data-v="${a[3]}"`:''}>${icon(a[0]?'warn':'check',16)}<span><b>${esc(a[1])}</b><br><span class="mut3">${esc(a[2])}</span></span></div>`).join('')))}
+ACT.esDP=v=>{ES.dp=v;rerender()};
+ACT.esProy=v=>{ES.dproy=ES.dproy===v?'':v;rerender()};
+{const _vd=VIEWS.dash;VIEWS.dash=function(){if(!U.tab.dash)U.tab.dash='pro';const tab=U.tab.dash;
+ const tabs=`<div class="tabs">${[['pro','Panel gerencial'],['wip','Gerencial · inventario en proceso'],['op','Operación del almacén']].map(t=>`<button class="${tab===t[0]?'on':''}" data-act="tab" data-k="dash" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+ if(tab==='pro')return tabs+esPanelDash();
+ const h=_vd.apply(this,arguments);const i=h.indexOf('<div class="tabs">');if(i<0)return h;const j=h.indexOf('</div>',i);return h.slice(0,i)+tabs+h.slice(j+6)}}
+
+/* ========================= LÁMINAS Y CORTE ========================= */
+const kpz=c=>(c.piezas||[]).reduce((s,p)=>s+(+p.kg||0),0),kcort=c=>Math.max(0,(+c.kgIni||0)-(+c.kgRet||0));
+const esEsp=m=>{const x=String(m.desc||'').toUpperCase().match(/(\d+(?:[.,]\d+)?)\s*MM/);return x?+x[1].replace(',','.'):null};
+const esEspTxt=e=>e==null?'Sin espesor':String(e).replace('.',',')+' mm';
+function esCorte(){const R=esRango(ES.cp);const lam=S.mats.filter(m=>m.mtr);const okE=m=>!ES.cesp||esEspTxt(esEsp(m))===ES.cesp;
+ const RG=(typeof retGr==='function'?retGr():[]).filter(g=>!ES.cesp||esEspTxt(g.e)===ES.cesp);
+ const retKg=RG.reduce((a,g)=>a+g.kg,0),retN=RG.reduce((a,g)=>a+g.n,0),retV=RG.reduce((a,g)=>a+g.kg*(+M(g.cod).costo||0),0);
+ const retPor={};RG.forEach(g=>retPor[g.cod]=(retPor[g.cod]||0)+g.kg);
+ const L=lam.filter(okE).map(m=>{const t=stk(m),q=+m.cuar||0,r=retPor[m.cod]||0;return{m,e:esEspTxt(esEsp(m)),nueva:Math.max(0,t-q-r),q,r}});
+ const okC=c=>!ES.cesp||cLams(c).some(l=>esEspTxt(esEsp(M(l.cod)))===ES.cesp);const C=S.cortes.filter(okC);
+
+ const CP=C.filter(c=>c.f>=R.d&&c.f<=R.h),CPv=C.filter(c=>c.f>=R.pd&&c.f<=R.ph);
+ const ap=a=>{const k=a.reduce((x,c)=>x+kcort(c),0);return k?a.reduce((x,c)=>x+kpz(c),0)/k:null};
+ const MM=esMeses(12).map(x=>{const a=C.filter(c=>String(c.f).slice(0,7)===x.k);return{lab:x.lab,k:x.k,v:[a.reduce((s,c)=>s+kpz(c),0),a.reduce((s,c)=>s+c.kgRet,0),a.reduce((s,c)=>s+c.kgChat,0)]}});
+ const rch=(typeof RMOV!=='undefined'?RMOV:[]).filter(m=>m.t==='A chatarra'&&m.f>=R.d&&m.f<=R.h).reduce((a,m)=>a+m.kg,0);
+ return{R,L,RG,retKg,retN,retV,C,CP,CPv,ap:ap(CP),pap:ap(CPv),MM,rch,esps:[...new Set(lam.map(m=>esEspTxt(esEsp(m))))].sort((a,b)=>parseFloat(a)-parseFloat(b))}}
+function esPanelCorte(){const D=esCorte(),R=D.R;const nueva=D.L.reduce((a,x)=>a+x.nueva,0),cuar=D.L.reduce((a,x)=>a+x.q,0);const cs=typeof chatStock==='function'?chatStock():0;
+ const conRet=D.CP.filter(c=>cLams(c).some(l=>l.orig==='Retal')).length;
+ /* Dona: lámina nueva por espesor */
+ const pe={};D.L.forEach(x=>pe[x.e]=(pe[x.e]||0)+x.nueva);const PE=Object.entries(pe).sort((a,b)=>parseFloat(a[0])-parseFloat(b[0]));
+ /* Flujo del período: origen → destino */
+ const E=[];const add=(a,b,v)=>{if(!(v>0))return;const e=E.find(x=>x.a===a&&x.b===b);e?e.v+=v:E.push({a,b,v})};
+ D.CP.forEach(c=>{const ls=cLams(c),ki=ls.reduce((a,l)=>a+l.kg,0)||c.kgIni||1;const fr=ls.map(l=>({o:l.orig==='Retal'?'o:ret':'o:new',w:(l.kg||0)/ki}));
+  const dst=[];const ds=c.dest&&c.dest.length?c.dest:[{d:c.proy||'STOCK',kgPz:kpz(c)}];ds.forEach(x=>dst.push(['d:'+(x.d==='STOCK'?'STOCK':x.d),+x.kgPz||0]));dst.push(['d:ret',c.kgRet||0]);dst.push(['d:chat',c.kgChat||0]);
+  fr.forEach(f=>dst.forEach(d=>add(f.o,d[0],f.w*d[1])))});
+ const dn=[...new Set(E.map(e=>e.b))];const dcol=id=>id==='d:ret'?'#F59E0B':id==='d:chat'?'#E8590C':id==='d:STOCK'?'#5B7DB8':'#24346B';
+ const dnom=id=>id==='d:ret'?'Retal que sobró':id==='d:chat'?'Chatarra':id==='d:STOCK'?'Piezas a stock':'Piezas '+id.slice(2);
+ const flujo=esSankey([[{id:'o:new',n:'Lámina nueva',c:'#94A3B8'},{id:'o:ret',n:'Retal usado',c:'#10B981'}],dn.sort((a,b)=>(a==='d:chat')-(b==='d:chat')||(a==='d:ret')-(b==='d:ret')).map(id=>({id,n:dnom(id),c:dcol(id)}))],E,esKg);
+ /* 3D del retal: espesor × tamaño (área de la pieza) */
+ const tam=[['< 0,25 m²',0,.25],['0,25–0,5',.25,.5],['0,5–1',.5,1],['1–2',1,2],['> 2 m²',2,1e9]];const ee=[...new Set(D.RG.map(g=>esEspTxt(g.e)))].sort((a,b)=>parseFloat(a)-parseFloat(b)).slice(0,6);
+ ES3.es3dRet={Z:tam.map(t=>ee.map(e=>D.RG.filter(g=>esEspTxt(g.e)===e&&g.a*g.l/1e6>=t[1]&&g.a*g.l/1e6<t[2]).reduce((a,g)=>a+g.kg,0))),cols:ee.map((e,i)=>ES_PAL[i%ES_PAL.length]),labX:tam.map(t=>t[0]),labY:ee};
+ /* Aprovechamiento por orden (últimas 8 del filtro) */
+ const ult=D.C.slice().sort((a,b)=>String(b.f+b.id).localeCompare(String(a.f+a.id))).slice(0,8).map(c=>{const k=kcort(c),p=k?kpz(c)/k:0;return[c.id,p*100,p>=.82?'#10B981':p>=.72?'#F59E0B':'#E8590C',fd(c.f)+' · '+cLams(c).map(l=>esEspTxt(esEsp(M(l.cod)))).join(' + ')+' · '+cDst(c).map(dLbl).join(' + '),esPct(p)]});
+ const vend=(S.chatV||[]).slice().sort((a,b)=>String(b.f).localeCompare(String(a.f)));const gen=typeof chatarra==='function'?chatarra().kg:0;
+ const sel=`<select class="sel" id="esCE" style="max-width:220px"><option value="">Todos los espesores</option>${D.esps.map(e=>`<option ${e===ES.cesp?'selected':''}>${esc(e)}</option>`).join('')}</select>`;
+ const dap=D.ap!=null&&D.pap!=null?Math.round((D.ap-D.pap)*1000)/10:null;
+ return esHero('Láminas y corte','Kilos de lámina, piezas cortadas, retal y chatarra: cuánto se aprovecha de cada lámina y a qué tanque va.',[
+   ['Lámina nueva disponible',esKg(nueva),'sin retal ni cuarentena'+(ES.cesp?' · '+ES.cesp:'')],
+   ['Retal reutilizable',esKg(D.retKg),D.retN+' pieza'+(D.retN===1?'':'s')+' · '+esM(D.retV)],
+   ['Aprovechamiento · '+R.txt,esPct(D.ap),dap==null?'kg en piezas ÷ kg cortados · meta 82 %':(dap>=0?'▲ ':'▼ ')+Math.abs(dap).toLocaleString('es-CO')+' puntos frente a '+R.ptxt,D.ap!=null&&D.ap<.82?'w':''],
+   ['Órdenes de corte · '+R.txt,String(D.CP.length),conRet+' con retal usado'],
+   ['Chatarra en acopio',esKg(cs),esM(cs*(typeof precioChat==='function'?precioChat():0))+' a precio actual',cs>0?'w':''],
+   ['En cuarentena',esKg(cuar),cuar>0?'esperan liberación de Calidad':'nada esperando a Calidad',cuar>0?'w':'']])
+ +`<div class="fbar" style="flex-wrap:wrap;gap:10px"><div class="seg">${ES_PER.map(p=>`<button class="${ES.cp===p[0]?'on':''}" data-act="esCP" data-v="${p[0]}">${p[1]}</button>`).join('')}</div>${sel}</div>`
+ +esGrid('minmax(0,1.5fr) minmax(0,1fr)',esCard('Kilos cortados mes a mes','Piezas · retal que sobró · chatarra · 12 meses',esStack(D.MM.map(m=>({...m,on:ES.cp==='mes'&&m.k===HOY.slice(0,7)})),['#24346B','#F59E0B','#E8590C'],esKg)+esLeyenda([['Piezas','#24346B'],['Retal que sobró','#F59E0B'],['Chatarra','#E8590C']])),
+   esCard('Lámina nueva por espesor','kg en AL001, sin retal ni cuarentena',esDona(PE.map((x,i)=>({n:x[0],v:x[1],c:ES_PAL[i%ES_PAL.length]})),esKg(nueva),'Disponible',esKg)))
+ +esGrid('minmax(0,1fr) minmax(0,1fr)',esCard('Flujo de cada kilo de lámina','Origen → piezas por destino, retal y chatarra · '+esc(R.txt),flujo),
+   esCard('Vista 3D · retal por espesor y tamaño','La altura son los kg de retal disponible. Arrastra para girar.',es3dCanvas('es3dRet'),'<span class="bd">3D</span>'))
+ +esGrid('minmax(0,1.2fr) minmax(0,1fr)',esCard('Aprovechamiento por orden de corte','Últimas órdenes · verde desde 82 %',esHbars(ult,v=>esPct(v/100))),
+   esCard('Chatarra','Generada, vendida y en acopio',`<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">${esRing(gen?cs/gen:0,'#E8590C',esKg(cs),'en acopio de '+esKg(gen)+' generados')}<div style="flex:1;min-width:180px">${[['Última venta',vend[0]?fd(vend[0].f)+' · '+esKg(vend[0].kg)+' · '+esM(vend[0].kg*vend[0].pu):'sin ventas todavía'],['Precio vigente',typeof precioChat==='function'?tpCop(precioChat())+' / kg':'—'],['Retal pasado a chatarra · '+R.txt,esKg(D.rch)]].map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--bd);font-size:13px"><span class="mut3">${esc(x[0])}</span><b style="text-align:right">${x[1]}</b></div>`).join('')}</div></div>`))}
+ACT.esCP=v=>{ES.cp=v;rerender()};
+{const _vc=VIEWS.corte;VIEWS.corte=function(){let h=_vc.apply(this,arguments);let p='';try{p=esPanelCorte()}catch(e){console.error(e);p=''}
+ /* quitar la fila de 4 indicadores (ahora están arriba, en el panel) */
+ const a=h.indexOf('<div class="g12 minis">');if(a>=0){const mm=/<div class="card"[ >]/.exec(h.slice(a+10));const b=mm?a+10+mm.index:-1;if(b>a)h=h.slice(0,a)+h.slice(b)}
+ const i=h.indexOf('<div class="fbar">');return i<0?p+h:h.slice(0,i)+p+h.slice(i)}}
+
+/* Dibujar el 3D y conectar los selectores después de pintar */
+{const _r=render;render=function(){const r=_r.apply(this,arguments);if(U.view==='dash'||U.view==='corte')setTimeout(()=>{['es3dDash','es3dRet'].forEach(id=>{es3d(id);es3dEventos(id)});
+ const dp=$('#esDP');if(dp&&!dp.dataset.es){dp.dataset.es='1';dp.addEventListener('change',e=>{ES.dproy=e.target.value;rerender()})}
+ const ce=$('#esCE');if(ce&&!ce.dataset.es){ce.dataset.es='1';ce.addEventListener('change',e=>{ES.cesp=e.target.value;rerender()})}},0);return r}}
+window.addEventListener('resize',()=>{if(U.view==='dash'||U.view==='corte')['es3dDash','es3dRet'].forEach(es3d)});
 
 </script>
 </body>
