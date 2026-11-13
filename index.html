@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.7.1 · bloque 6';
+const VERSION='4.8.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4742,7 +4742,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -6367,6 +6367,81 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .tpRepT{width:100%;border-collapse:collapse;font-size:11px}.tpRepT td{padding:4px 0;border-bottom:1px solid #eef0f6}
 @media(max-width:700px){.tpRepK{grid-template-columns:repeat(2,minmax(0,1fr))}.tpRepG{grid-template-columns:1fr}.tpPar{grid-template-columns:18px minmax(0,1fr) 70px 38px}}
 </style>`);
+
+/* ================= v4.8.0 · Botones que no guardaban en Supabase · SQL 26 =================
+   1) Baja mensual de gases: ahora se guarda en la base (alm_gases + movimiento «Baja» en el kárdex).
+      Gerencia o el Auxiliar la registran; solo Gerencia la anula (el cilindro vuelve con un movimiento nuevo).
+      El reparto entre proyectos alimenta la hoja de costos, igual que en la maqueta.
+   2) Los botones de la maqueta que solo cambiaban la pantalla ahora explican qué hacer en la app real
+      (no hacen nada a medias): reemplazar o eliminar el BOM, eliminar proyecto o material, simular
+      solicitud, usuarios, restaurar copia del navegador, requisición, unir códigos, modelos y kits. */
+
+/* ---------- 1) Baja de gases ---------- */
+let GASES_DB=[];
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(typeof KQ!=='undefined'&&KQ.on&&!U.user)return r;
+ try{const L=await leerTodo('alm_gases','id,mes,cod,cilindros,m3_cilindro,m3,costo_unit,costo,metodo,festivos,reparto,detalle,usuario,anulado,anulado_motivo,creado_en','id');GASES_DB=L||[];
+  S.gases=GASES_DB.filter(g=>!g.anulado).map(g=>({id:g.id,mes:g.mes,cod:g.cod,cil:+g.cilindros,m3:+g.m3,costo:+g.costo,metodo:g.metodo,fest:g.festivos,reparto:g.reparto||{},det:g.detalle||{},proys:Object.keys(g.reparto||{}),u:g.usuario,f:String(g.creado_en||'').slice(0,10)}))}
+ catch(e){GASES_DB=[];S.gases=[]}
+ return r}}
+/* El TALLER no entra en el reparto de gases de los proyectos */
+{const _gp=gasProys;gasProys=function(){return _gp.apply(this,arguments).filter(p=>p.id!==TALLER_ID)}}
+ACT.saveGas=async(v,el)=>{const c=calcGas();const G=S.mats.filter(isGas).filter(m=>(+GB.cil[m.cod]||0)>0);
+ if(!G.length){toast('Escribe cuántos cilindros se consumieron en el mes.','er');return}
+ for(const m of G){const q=+GB.cil[m.cod];const d=(m.stk.AL001||0);if(q>d+1e-9){toast(`Solo hay ${qf(d)} cilindros de ${esc(m.cod)} en AL001.`,'er');return}}
+ if(!c.W){toast(GB.met==='horas'?'Escribe las horas de soldadura de al menos un proyecto.':'Marca al menos un proyecto.','er');return}
+ const P_=c.P.filter(x=>x.pct>0);const rep={},det={};let s=0;P_.forEach((x,i)=>{const pc=i===P_.length-1?+(1-s).toFixed(6):+x.pct.toFixed(6);s+=pc;rep[x.p.id]=pc;det[x.p.id]={dias:x.d,horas:+GB.hrs[x.p.id]||0}});
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_gas_baja',{p:{mes:GB.mes,metodo:GB.met,festivos:!!GB.fest,lineas:G.map(m=>({cod:m.cod,cil:+GB.cil[m.cod],m3:m3c(m)})),reparto:rep,detalle:det}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();
+  toast(`Baja de ${GB.mes} guardada (${(data.ids||[]).join(', ')}): ${nf1.format(c.tm)} m³ · ${money(c.tc)} repartidos entre ${Object.keys(rep).length} proyectos.${data.ya_habia?' Ojo: ese mes ya tenía otra baja; esta se suma.':''}`,data.ya_habia?'wa':'ok')})};
+/* Bajas ya registradas del mes, con «Anular» para Gerencia */
+{const _dg=drawGas;drawGas=function(){_dg.apply(this,arguments);const box=$('#modal .mbox');if(!box||!GB)return;const L=GASES_DB.filter(g=>g.mes===GB.mes);if(!L.length)return;
+ const ger=U.user&&U.user.rol==='Gerencia';const h=`<div class="lb" style="margin:6px 0 6px">Bajas ya registradas de ${esc(GB.mes)}</div><div class="tw" style="margin-bottom:12px"><table class="t"><thead><tr><th>Documento</th><th>Gas</th><th class="r">Cilindros</th><th class="r">m³</th><th class="r">Costo</th><th>Proyectos</th><th></th></tr></thead><tbody>${L.map(g=>`<tr><td><b>${esc(g.id)}</b><div class="sub">${esc(g.usuario||'')}</div></td><td>${cc(g.cod)}</td><td class="num">${qf(+g.cilindros)}</td><td class="num">${nf1.format(+g.m3)}</td><td class="num">${money(+g.costo)}</td><td class="sub">${Object.entries(g.reparto||{}).map(([p,x])=>esc(p)+' '+Math.round(x*100)+'%').join(' · ')}</td><td>${g.anulado?`<span class="bd">Anulada</span>`:`<button class="btn ghost sm" data-act="gasAnular" data-v="${esc(g.id)}" ${ger?'':'disabled title="Solo Gerencia"'}>${icon('trash',14)}Anular</button>`}</td></tr>`).join('')}</tbody></table></div>`;
+ const lb=box.querySelector('.lb');if(lb)lb.insertAdjacentHTML('beforebegin',h)}}
+ACT.gasAnular=v=>modal(mh('Anular '+esc(v),'Los cilindros vuelven a AL001 con un movimiento nuevo y el costo sale de los proyectos. El kárdex no se borra.')+`<div class="fld"><label for="gasMo">Motivo</label><input class="inp" id="gasMo" placeholder="Ej.: se digitó mal la cantidad de cilindros"></div><div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="gasAnularGo" data-v="${esc(v)}">Anular baja</button></div>`,'s');
+ACT.gasAnularGo=async(v,el)=>{const mo=($('#gasMo')||{value:''}).value.trim();if(mo.length<5){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_gas_anular',{p_id:v,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(esc(v)+' anulada: los cilindros volvieron a AL001.','ok')})};
+Object.assign(ACT_PERM,{saveGas:'gas.baja',gasAnularGo:'gas.baja'});
+
+/* ---------- 2) Botones que solo cambiaban la pantalla ---------- */
+const BT_AVISO={
+ bomRepGo:'El BOM no se reemplaza ni se borra desde aquí: cada cambio pasa por «El BOM tiene un error» (Solicitudes › Nueva solicitud), que Gerencia corrige con historial.',
+ bomDelAll:'El BOM no se borra: cada cambio pasa por «El BOM tiene un error», que Gerencia corrige con historial.',
+ bomDelAllGo:'El BOM no se borra: cada cambio pasa por «El BOM tiene un error», que Gerencia corrige con historial.',
+ bomSave:'El BOM no se edita aquí: usa «El BOM tiene un error» y Gerencia lo corrige con historial.',
+ simSol:'La simulación es solo de la maqueta. En la app real las solicitudes llegan del taller (QR o «Nueva solicitud»).',
+ newUser:'Las cuentas se crean en Supabase (Authentication › Add user) y su perfil con un SQL. Pídeselo a Claude con el correo, el nombre y el perfil.',
+ saveUser:'Las cuentas se crean en Supabase (Authentication › Add user) y su perfil con un SQL. Pídeselo a Claude.',
+ togUser:'Para desactivar una cuenta pídeselo a Claude: se hace en la base, con rastro.',
+ restGo:'La restauración no se hace desde el navegador: se hace en Supabase con la copia .sql, siguiendo 0_LEEME_reconstruccion.',
+ backup:'Usa «Descargar copia de seguridad (.sql)», que es la copia completa de la base de datos.',
+ reqNew:'Para comprar, Compras crea la orden en «Órdenes de compra» (o desde «Proyección de compras» y «Mínimos y reposición»).',
+ unirAsk:'Las equivalencias de códigos se definen al cargar el BOM. Si un código está mal, usa «El BOM tiene un error».',
+ unirGo:'Las equivalencias de códigos se definen al cargar el BOM. Si un código está mal, usa «El BOM tiene un error».',
+ phList:'Las equivalencias de códigos se definen al cargar el BOM. Si un código está mal, usa «El BOM tiene un error».',
+ phUnir:'Las equivalencias de códigos se definen al cargar el BOM.',phTodos:'Las equivalencias de códigos se definen al cargar el BOM.',
+ modSave:'«Modelos y kits» es solo de consulta hasta después del piloto (decisión 82).',kitSave:'«Modelos y kits» es solo de consulta hasta después del piloto (decisión 82).'};
+Object.keys(BT_AVISO).forEach(k=>{ACT[k]=()=>toast(BT_AVISO[k],'wa')});
+{const _da=ACT.delAsk;ACT.delAsk=(v,el)=>{const t=String(v).slice(0,String(v).indexOf('|'));
+ if(t==='proy'){toast('Los proyectos no se eliminan (tienen kárdex). Para terminarlo usa «Editar» › cerrar proyecto; si se creó por error, avísale a Gerencia.','wa');return}
+ if(t==='mat'){toast('Los materiales con historial no se eliminan (el kárdex no se borra). Si ya no se usa, avísale a Gerencia.','wa');return}
+ if(t==='gas'){toast('Las bajas de gases se anulan desde Proyectos › «Baja de gases» (solo Gerencia).','wa');return}
+ return _da(v,el)}}
+/* El flujo editado queda solo en este equipo: se avisa */
+{const _fs=ACT.flSave;if(_fs)ACT.flSave=(...a)=>{const r=_fs(...a);toast('El flujo se guardó en este equipo (no se comparte con los demás usuarios).','i');return r}}
+/* Quitar de la pantalla lo que no aplica en la app real */
+new MutationObserver(()=>{if(!U.user)return;
+ $$('[data-act="simSol"]').forEach(b=>b.remove());
+ if(U.view==='ajus')$$('.card').forEach(c=>{if(/Restaurar desde una copia/.test(c.textContent)&&!c.dataset.btq){c.dataset.btq='1';c.remove()}});
+}).observe(document.body,{childList:true,subtree:true});
+
+/* ---------- 3) Importador de OC por Excel con columna NIT (v4.8.0) ---------- */
+if(TPL&&TPL.oc&&!TPL.oc.cols.includes('NIT')){TPL.oc.cols.splice(2,0,'NIT');TPL.oc.ej.splice(2,0,'800123456-7')}
+{const _ps=IMPF.oc.parse;IMPF.oc.parse=function(rows){const d=_ps.apply(this,arguments);if(!d||!d.ok)return d;
+ const h=hdr(rows,['CODIGO','CANTIDAD']);const cn=h&&h.col('NIT'),co=h&&h.col('OC');
+ if(h&&cn>=0){const N={};rows.slice(h.i+1).forEach(r=>{const k=String(r[co]||'SIN NÚMERO').trim();const n=String(r[cn]==null?'':r[cn]).trim();if(n&&!N[k])N[k]=n});d.L.forEach(g=>{g.nit=N[g.num]||''})}
+ const sin=d.L.filter(g=>!g.nit&&!(typeof provPorNom==='function'&&provPorNom(g.prov)));d.sinNit=sin.map(g=>g.num);return d}}
+{const _pv=IMPF.oc.prev;IMPF.oc.prev=function(d){let h=_pv.apply(this,arguments);if(d&&d.ok&&d.sinNit&&d.sinNit.length)h=`<div class="note wa">${icon('warn',16)}<span>${d.sinNit.length} orden(es) sin NIT y con un proveedor que todavía no está registrado (${esc(d.sinNit.slice(0,5).join(', '))}). Se cargan igual; agrega la columna NIT para que el recibo de mercancía reconozca al proveedor.</span></div>`+h;return h}}
+{const _ad=IMPF.oc.applyDb;IMPF.oc.applyDb=async function(d){const {data,error}=await SB.rpc('alm_oc_importar',{p:d.L.map(g=>({num:g.num,prov:g.prov,nit:g.nit||'',fecha:g.f||'',lineas:g.lineas.map(l=>({cod:l.cod,ped:l.ped,pu:l.pu||0}))}))});if(error)throw error;return(data.ids||[]).length+' orden(es) de compra cargadas: '+(data.ids||[]).join(', ')+'.'}}
 
 </script>
 </body>
