@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.10.0 · bloque 6';
+const VERSION='4.10.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -6735,16 +6735,15 @@ let ABDB=0;document.addEventListener('input',e=>{if(!ABF||!e.target.dataset||!e.
 function abVista(){const f=U.f;const d=f.abD||addD(HOY,-90),h=f.abH||HOY;
  const L=(S.ajb||[]).filter(a=>a.f>=d&&a.f<=h&&(!f.abFB||a.bod===f.abFB)&&(!f.abFT||a.tipo===f.abFT)&&(!f.abFR||nrmH(a.cod+' '+a.desc).includes(nrmH(f.abFR))));
  const val=a=>(a.tipo==='-'?-1:1)*a.q*(a.cu||0);const up=L.filter(a=>a.tipo==='+'),dn=L.filter(a=>a.tipo==='-');const sv=X=>X.reduce((s,a)=>s+Math.abs(val(a)),0);const neto=L.reduce((s,a)=>s+val(a),0);
- const puede=abPuede();
+ const puede=abPuede();const mes=HOY.slice(0,7);const M_=(S.ajb||[]).filter(a=>a.f.slice(0,7)===mes);
+ const cnt=k=>{const o={};L.forEach(a=>{o[a[k]]=(o[a[k]]||0)+1});return Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,5)};
+ const barras=(X,fmt)=>{const mx=Math.max(1,...X.map(x=>x[1]));return X.length?`<div class="whb">${X.map(([k,v])=>`<div class="whr"><span class="whl"><b>${esc(k)}</b> <span class="sub">${esc(fmt(k))}</span></span><span class="wht"><i style="width:${(v/mx*100).toFixed(1)}%;background:linear-gradient(90deg,#1B2A6B,#5B7DB8)"></i></span><b>${v}</b></div>`).join('')}</div>`:empty('Sin ajustes en el periodo','bars')};
  regT('ajb','Historial de ajustes de inventario de bodega',['Ajuste','Fecha','Hora','Tipo','Bodega','Código','Descripción','UM','Cantidad','Existencia anterior','Existencia posterior','Costo unitario Siesa','Valor','Motivo','Observaciones','Responsable'],L.map(a=>[a.id,a.f,a.h,a.tipo==='+'?'Positivo':'Negativo',a.bod,a.cod,a.desc,a.um,(a.tipo==='-'?-1:1)*a.q,a.ant,a.post,a.cu,val(a),a.mot==='Otro'?'Otro: '+a.otro:a.mot,a.obs,a.u]),'Ajustes a la existencia de las bodegas AL001 y MP001, sin proyecto. No se editan ni se borran; se corrigen con un ajuste contrario.');
  return`<div class="ajhero"><div><div class="tzl1"><span></span>INVENTARIO DE BODEGA</div><h2>Ajuste de inventario de bodega</h2><p>Corrige la existencia de un material en AL001 o MP001 cuando lo físico no coincide con la app (por ejemplo, una lámina con menos kilos). No va a ningún proyecto; queda en el kárdex como «Ajuste» con su número AJB y el costo de Siesa.</p></div>
- <div class="acts" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn" data-act="abNuevo" data-v="+" ${puede?'':'disabled title="Solo Gerencia"'}>${icon('plus',16)}Ajuste positivo (+)</button><button class="btn dng" data-act="abNuevo" data-v="-" ${puede?'':'disabled title="Solo Gerencia"'}>${icon('down',16)}Ajuste negativo (−)</button></div></div>
- ${puede?'':`<div class="note i" style="margin-bottom:12px">${icon('info',16)}<span>Solo Gerencia hace ajustes de inventario de bodega. Usted puede ver el historial.</span></div>`}
- <div class="g12 minis" style="margin-bottom:18px">
-  <div class="card kpi mini"><span class="k">Ajustes en el periodo</span><b>${L.length}</b><small>${fd(d)} a ${fd(h)}</small></div>
-  <div class="card kpi mini"><span class="k">Positivos</span><b style="color:var(--ok)">${up.length}</b><small>${money(sv(up))}</small></div>
-  <div class="card kpi mini"><span class="k">Negativos</span><b style="color:var(--er)">${dn.length}</b><small>${money(sv(dn))}</small></div>
-  <div class="card kpi mini"><span class="k">Efecto neto en el inventario</span><b style="color:${neto<0?'var(--er)':'var(--ok)'}">${money(neto)}</b><small>al costo de Siesa</small></div></div>
+ <div class="ajbtns"><button class="ajb pos" data-act="abNuevo" data-v="+" ${puede?'':'disabled'}><b>+</b><span>AJUSTE POSITIVO</span><small>aumenta la existencia</small></button><button class="ajb neg" data-act="abNuevo" data-v="-" ${puede?'':'disabled'}><b>−</b><span>AJUSTE NEGATIVO</span><small>disminuye la existencia</small></button></div></div>
+ ${puede?'':`<div class="note">${icon('info',16)}<span>Su perfil puede consultar el historial. Los ajustes de bodega los hace Gerencia.</span></div>`}
+ <div class="g12 minis wk"><div class="c3">${kpi('Cantidades ajustadas (+)','+'+qf(up.reduce((s,a)=>s+a.q,0)),`${up.length} ajustes · ${money(sv(up))}`,'plus')}</div><div class="c3">${kpi('Cantidades ajustadas (−)','−'+qf(dn.reduce((s,a)=>s+a.q,0)),`${dn.length} ajustes · ${money(sv(dn))}`,'warn',dn.length?'w':'')}</div><div class="c3">${kpi('Ajustes este mes',String(M_.length),mesTxt(mes),'cal')}</div><div class="c3">${kpi('Efecto neto en el inventario',money(neto),'en el periodo · costo Siesa','scale',neto<0?'w':'')}</div></div>
+ <div class="g12"><div class="card c6"><div class="ch"><div><h3>Referencias con más ajustes</h3><p>En el periodo filtrado</p></div></div>${barras(cnt('cod'),k=>(M(k).desc||'').slice(0,26))}</div><div class="card c6"><div class="ch"><div><h3>Motivos más frecuentes</h3><p>En el periodo filtrado</p></div></div>${barras(cnt('mot'),k=>'')}</div></div>
  <div class="card"><div class="ch"><div><h3>Historial de ajustes de bodega</h3><p>${L.length} ajustes · existencia antes y después, motivo y responsable</p></div><div class="acts">${xbtns('ajb')}</div></div>
  <div class="cfil"><div class="fld"><label for="abD">Desde</label><input class="inp" type="date" id="abD" data-f="abD" value="${d}"></div><div class="fld"><label for="abH">Hasta</label><input class="inp" type="date" id="abH" data-f="abH" value="${h}"></div>
  <div class="fld"><label for="abFB">Bodega</label><select class="sel" id="abFB" data-f="abFB"><option value="">Todas</option>${ABOD.map(b=>`<option value="${b[0]}" ${b[0]===f.abFB?'selected':''}>${b[0]}</option>`).join('')}</select></div>
