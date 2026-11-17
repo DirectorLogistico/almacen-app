@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.9.0 · bloque 6';
+const VERSION='4.10.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4742,7 +4742,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -4802,7 +4802,7 @@ ACT.solApr=async(v,el)=>{const [id,ok]=v.split('|');const obs=(($('#saObs')||{va
   await cargarDatos();closeModal();rerender();toast(id+(ok==='1'?' aprobada. Pasa a almacén para entregar; lo aprobado se suma al tope del BOM.':' rechazada.'),'ok')})};
 
 /* ---------- «El BOM tiene un error»: reportar (QR o app) ---------- */
-ACT.kBomGo=async(v,el)=>{const p=P(K.proy);if(!p)return;const g=x=>($('#'+x)||{}).value||'';const cod=g('beC').trim(),q=numv(g('beQ')),qnT=g('beN').trim(),mot=g('beM').trim();
+ACT.kBomGo=async(v,el)=>{const p=P(K.proy);if(!p)return;const g=x=>($('#'+x)||{}).value||'';const cod=g('beC').trim(),q=numIn(g('beQ')),qnT=g('beN').trim(),mot=g('beM').trim();
  if(!cod){toast('Escriba el código.','er');return}if(mot.length<6){toast('Explique el error.','er');return}if(!(q>=0)){toast('Revise la cantidad.','er');return}
  const datos={proy:p.id,tipo:g('beT'),cod,sec:g('beS'),q:q||0,q_nueva:qnT===''?null:numv(qnT),motivo:mot};
  const kq=typeof KQ!=='undefined'&&KQ.on;
@@ -5304,7 +5304,7 @@ ACT.recAj=(v,el)=>cntResolver(v,false,el);
 
 /* ---------- Ajuste de inventario en proceso (solo Gerencia) ---------- */
 ACT.ajGo=async(v,el)=>{if(!AJF)return;const err=ajValida();if(err){toast(err,'er');ajForm();return}const F=AJF;
- await sbAccion(el||$('#ajGoBtn'),'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_ajwip_registrar',{p:{tok:F.tok,tipo:F.tipo,proy:F.proy,op:F.op,cod:F.cod,ub:F.ub,q:numv(F.q),mot:F.mot,otro:F.otro,obs:F.obs,comp:F.comp||''}});if(error)throw error;
+ await sbAccion(el||$('#ajGoBtn'),'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_ajwip_registrar',{p:{tok:F.tok,tipo:F.tipo,proy:F.proy,op:F.op,cod:F.cod,ub:F.ub,q:numIn(F.q),mot:F.mot,otro:F.otro,obs:F.obs,comp:F.comp||''}});if(error)throw error;
   const m=MI[F.cod]||{um:''};AJF=null;await cargarDatos();closeModal();rerender();
   toast(`${data.id} registrado: ${esc(F.cod)} en ${esc(F.proy)} pasó de ${qf(+data.antes)} a ${qf(+data.despues)} ${m.um}.`,'ok')})};
 
@@ -5318,7 +5318,7 @@ ACT.invNewGo=async(v,el)=>{const mes=$('#inM').value,f=$('#inF').value;if(!mes||
  await sbAccion(el,'Creando…',async()=>{const {data,error}=await SB.rpc('alm_inv_crear',{p_mes:mes,p_fecha:f});if(error)throw error;
   U.f.ivI=data.id;U.tab.invc='arc';await cargarDatos();closeModal();rerender();toast('Inventario de '+mesTxt(mes)+' creado. Carga Siesa y APPOLO.','ok')})};
 ACT.ivSave=async(v,el)=>{const I=INV();if(!I)return;const vals={};
- $$('[data-iv]').forEach(i=>{if(i.value==='')return;const q=numv(i.value);if(isNaN(q)||q<0)return;const o=I.fis[i.dataset.iv];if(!o||+o.q!==q)vals[i.dataset.iv]=q});
+ $$('[data-iv]').forEach(i=>{if(i.value==='')return;const q=numIn(i.value);if(isNaN(q)||q<0)return;const o=I.fis[i.dataset.iv];if(!o||+o.q!==q)vals[i.dataset.iv]=q});
  if(!Object.keys(vals).length){toast('No hubo cambios.','i');return}
  await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_inv_fisico',{p_id:I.id,p_vals:vals});if(error)throw error;await cargarDatos();rerender();toast(data.n+' cantidades guardadas.','ok')})};
 ACT.invCloseGo=async(v,el)=>{const I=S.invm.find(x=>x.id===v);if(!I)return;const r=invRes(I);delete r.R;
@@ -6643,6 +6643,118 @@ ACT.esCP=v=>{ES.cp=v;rerender()};
  const dp=$('#esDP');if(dp&&!dp.dataset.es){dp.dataset.es='1';dp.addEventListener('change',e=>{ES.dproy=e.target.value;rerender()})}
  const ce=$('#esCE');if(ce&&!ce.dataset.es){ce.dataset.es='1';ce.addEventListener('change',e=>{ES.cesp=e.target.value;rerender()})}},0);return r}}
 window.addEventListener('resize',()=>{if(U.view==='dash'||U.view==='corte')['es3dDash','es3dRet'].forEach(es3d)});
+
+/* =====================================================================
+   v4.10.0 · Cantidades con decimales en las casillas numéricas
+   Las casillas de tipo número del navegador siempre entregan el decimal con
+   punto («85.5»). numv() lee el punto como separador de miles («85.5» → 855).
+   numIn() lee bien los dos formatos: «85.5» de la casilla y «1.234,5» escrito
+   a mano o desde Excel. Se usa en: ajuste en proceso, ajuste de bodega,
+   excedentes y conteo físico del inventario mensual.
+   ===================================================================== */
+function numIn(v){if(v==null||v==='')return NaN;if(typeof v==='number')return v;const s=String(v).trim();if(/^-?\d+(\.\d+)?$/.test(s))return parseFloat(s);return numv(s)}
+/* Ajuste en proceso (app17): la cantidad se guarda como número para que la vista previa y la validación la lean bien */
+{const _l=ajLee;ajLee=function(){_l.apply(this,arguments);if(AJF&&AJF.q!==''&&AJF.q!=null&&typeof AJF.q!=='number'){const n=numIn(AJF.q);if(!isNaN(n))AJF.q=n}}}
+{const _f=ajForm;ajForm=function(){if(AJF&&typeof AJF.q==='string'&&AJF.q!==''){const n=numIn(AJF.q);if(!isNaN(n))AJF.q=n}return _f.apply(this,arguments)}}
+
+/* =====================================================================
+   v4.10.0 · Ajuste de inventario de BODEGA (SQL 27)
+   Menú › Ajuste de inventario › pestaña «Bodega (almacén)».
+   Ajuste positivo o negativo de un material en AL001 o MP001, sin proyecto.
+   Solo Gerencia; motivo obligatorio; queda en el kárdex como «Ajuste» (AJB-0001…)
+   al costo de Siesa. No se edita ni se borra: se corrige con otro ajuste.
+   La pestaña «En proceso (proyecto)» sigue igual que antes.
+   ===================================================================== */
+const ABOD=[['AL001','AL001 · Almacén principal'],['MP001','MP001 · Piezas de corte (materia prima en producción)']];
+let ABF=null;
+const abPuede=()=>U.user&&U.user.rol==='Gerencia';
+const abExis=(cod,bod)=>{const m=MI[cod];return m?Math.max(0,+(((m.stk||{})[bod])||0)):0};
+const abCuar=(cod,bod)=>{const m=MI[cod];return bod==='AL001'&&m?(+m.cuar||0):0};
+const abRet=(cod,bod)=>{if(bod!=='AL001'||typeof retGr!=='function')return 0;try{return retGr().filter(g=>g.cod===cod).reduce((s,g)=>s+(+g.kg||0),0)}catch(e){return 0}};
+
+/* ---------- leer el historial ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();let r=[];
+ try{r=await leerTodo('alm_ajustes_bodega','id,fecha,hora,tipo,bodega,cod,um,cantidad,antes,despues,motivo,otro,observaciones,costo_unit,responsable','id')}catch(e){console.warn('ajustes de bodega',e);r=[]}
+ S.ajb=r.map(a=>({id:a.id,f:a.fecha,h:a.hora,tipo:a.tipo,bod:a.bodega,cod:a.cod,desc:(MI[a.cod]||{}).desc||a.cod,um:a.um,q:+a.cantidad,ant:+a.antes,post:+a.despues,mot:a.motivo,otro:a.otro||'',obs:a.observaciones||'',cu:+a.costo_unit||0,u:a.responsable||''})).sort((a,b)=>b.id.localeCompare(a.id))}}
+
+/* ---------- formulario ---------- */
+function abNuevo(tipo,pre){ABF=Object.assign({tipo,tok:'B'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),bod:'AL001',cod:'',q:'',mot:'',otro:'',obs:''},pre||{});abForm()}
+function abLee(){if(!ABF)return;const g=id=>{const e=document.getElementById(id);return e?e.value:null};
+ const map={abB:'bod',abC:'cod',abQ:'q',abM:'mot',abO:'otro',abObs:'obs'};Object.entries(map).forEach(([id,k])=>{const v=g(id);if(v!=null)ABF[k]=v});ABF.cod=String(ABF.cod||'').trim()}
+function abCalc(){const F=ABF;const m=F.cod&&MI[F.cod];const ex=m?abExis(F.cod,F.bod):null;const q=numIn(F.q);const neg=F.tipo==='-';
+ const post=ex!=null&&q>0?(neg?ex-q:ex+q):null;const cu=m?abCuar(F.cod,F.bod):0,rt=m?abRet(F.cod,F.bod):0;
+ let err='';if(neg&&post!=null){if(post<-1e-9)err=`No alcanza: en ${F.bod} hay ${qf(ex)} ${m.um}. La existencia no puede quedar negativa.`;
+  else if(post<cu-1e-9)err=`No se puede: ${qf(cu)} ${m.um} están en cuarentena (esperan a Calidad).`;
+  else if(rt>0&&post<cu+rt-1e-9)err=`No se puede: de este código hay ${qf(rt)} kg registrados como retal. Primero corrige el retal (Láminas y corte › retal a chatarra) y luego ajusta la lámina.`}
+ return{m,ex,q,neg,post,cu,rt,err}}
+function abForm(){const F=ABF;const C=abCalc();const m=C.m,neg=C.neg;const col=neg?'#DC2626':'#0E9F6E';
+ const refs=S.mats.filter(x=>F.bod==='MP001'?(x.cl||abExis(x.cod,'MP001')>0):!x.cl).filter(x=>!neg||abExis(x.cod,F.bod)>0).slice(0,1500);
+ modal(mh(`<span style="color:${col}">${neg?'AJUSTE NEGATIVO (−) · BODEGA':'AJUSTE POSITIVO (+) · BODEGA'}</span>`,neg?'Disminuye la existencia del material en la bodega':'Aumenta la existencia del material en la bodega')+`
+ <div class="ajtg" role="group" aria-label="Tipo de ajuste"><button class="${!neg?'on pos':''}" data-act="abTipo" data-v="+">+ Positivo</button><button class="${neg?'on neg':''}" data-act="abTipo" data-v="-">− Negativo</button></div>
+ <div class="ajg">
+ <div class="fld"><label>Fecha del movimiento</label><div class="inp ro">${fd(HOY)} · ${nowHM()} <span class="sub" style="margin-left:6px">(automática)</span></div></div>
+ <div class="fld"><label>Responsable</label><div class="inp ro">${esc(U.user.nombre)}</div></div>
+ <div class="fld ajw"><label for="abB">Bodega</label><select class="sel" id="abB" data-ab="1">${ABOD.map(b=>`<option value="${b[0]}" ${b[0]===F.bod?'selected':''}>${b[1]}</option>`).join('')}</select></div>
+ <div class="fld ajw"><label for="abC">Código de referencia</label><input class="inp" id="abC" list="abCL" data-ab="1" value="${esc(F.cod)}" placeholder="${neg?'Solo materiales con existencia en esta bodega':'Busque por código o descripción'}"><datalist id="abCL">${refs.map(x=>`<option value="${esc(x.cod)}">${esc(x.desc)}</option>`).join('')}</datalist></div>
+ <div class="fld ajw"><label>Descripción</label><div class="inp ro">${m?esc(m.desc):F.cod?'<span style="color:var(--er)">Código no registrado</span>':'—'}</div></div>
+ <div class="fld"><label>Unidad de medida</label><div class="inp ro">${m?esc(m.um):'—'}</div></div>
+ <div class="fld"><label for="abQ">Cantidad a ajustar</label><input class="inp" id="abQ" type="number" min="0" step="any" data-ab="1" value="${esc(F.q)}" placeholder="Mayor que cero"></div>
+ <div class="fld ajw"><label for="abM">Motivo del ajuste (obligatorio)</label><select class="sel" id="abM" data-ab="1"><option value="">Seleccione…</option>${AJMOT.map(x=>`<option ${x===F.mot?'selected':''}>${x}</option>`).join('')}</select></div>
+ ${F.mot==='Otro'?`<div class="fld ajw"><label for="abO">Explique el motivo (obligatorio)</label><input class="inp" id="abO" value="${esc(F.otro)}" placeholder="¿Por qué se ajusta?"></div>`:''}
+ <div class="fld ajw"><label for="abObs">Observaciones (opcional)</label><textarea class="inp" id="abObs" rows="2" placeholder="Ej.: pesada en báscula el ${fd(HOY)}">${esc(F.obs)}</textarea></div></div>
+ ${m&&(C.cu>0||C.rt>0)?`<div class="note i" style="margin-top:4px">${icon('info',16)}<span>De esta existencia, ${C.cu>0?`<b>${qf(C.cu)} ${m.um}</b> están en cuarentena`:''}${C.cu>0&&C.rt>0?' y ':''}${C.rt>0?`<b>${qf(C.rt)} kg</b> están registrados como retal`:''}. El ajuste negativo no puede bajar de ahí.</span></div>`:''}
+ <div class="ajprev ${neg?'neg':'pos'}"><div><span>Existencia actual en ${esc(F.bod)}</span><b>${C.ex==null?'—':qf(C.ex,m&&m.um)+' '+(m?m.um:'')}</b></div><div class="arr">${neg?'−':'+'} ${C.q>0?qf(C.q,m&&m.um):'0'}</div><div><span>Nueva existencia</span><b class="${C.err?'bad':''}">${C.post==null?'—':qf(C.post,m&&m.um)+' '+(m?m.um:'')}</b></div></div>
+ ${C.err?`<div class="note er" style="margin-top:10px">${icon('warn',16)}<span>${esc(C.err)}</span></div>`:''}
+ ${m&&C.q>0?`<p class="sub" style="margin-top:8px">Valor al costo de Siesa: <b>${m.costo?money(C.q*(+m.costo||0)):'sin costo Siesa'}</b></p>`:''}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="abRevisar">${icon('check',16)}Revisar y confirmar</button></div>`,'w')}
+function abValida(){abLee();const F=ABF;const C=abCalc();
+ if(!ABOD.some(b=>b[0]===F.bod))return'Escoja la bodega.';if(!C.m)return'Escoja un código de referencia que exista en el catálogo.';if(!(C.q>0))return'La cantidad debe ser mayor que cero.';
+ if(!F.mot)return'El motivo del ajuste es obligatorio.';if(F.mot==='Otro'&&String(F.otro).trim().length<4)return'Explique el motivo «Otro».';
+ return C.err}
+function abRevisar(){const err=abValida();if(err){toast(err,'er');abForm();return}const F=ABF;const C=abCalc();const m=C.m;
+ modal(mh('Confirmar el ajuste de bodega','Revise los datos. Al confirmar, la existencia de la bodega cambia y el ajuste queda en el kárdex; no se puede editar ni borrar.')+`
+ <dl class="lkv"><dt>Tipo</dt><dd><b style="color:${C.neg?'#DC2626':'#0E9F6E'}">${C.neg?'AJUSTE NEGATIVO (−)':'AJUSTE POSITIVO (+)'}</b></dd><dt>Bodega</dt><dd>${esc(F.bod)}</dd><dt>Material</dt><dd>${cc(F.cod)} ${esc(m.desc)}</dd><dt>Existencia</dt><dd>${qf(C.ex,m.um)} → <b>${qf(C.post,m.um)} ${m.um}</b> (${C.neg?'−':'+'}${qf(C.q,m.um)})</dd><dt>Valor (costo Siesa)</dt><dd>${m.costo?money(C.q*(+m.costo||0)):'sin costo Siesa'}</dd><dt>Motivo</dt><dd>${esc(F.mot==='Otro'?'Otro: '+F.otro:F.mot)}</dd>${F.obs?`<dt>Observaciones</dt><dd>${esc(F.obs)}</dd>`:''}<dt>Responsable</dt><dd>${esc(U.user.nombre)} · ${fd(HOY)} ${nowHM()}</dd></dl>
+ <div class="mf"><button class="btn ghost" data-act="abVolver">Volver a editar</button><button class="btn" id="abGoBtn" data-act="abGo">${icon('check',16)}Confirmar ajuste</button></div>`,'s')}
+function abVer(id){const A=(S.ajb||[]).find(x=>x.id===id);if(!A)return;const neg=A.tipo==='-';
+ modal(mh(A.id+' · '+(neg?'Ajuste negativo de bodega':'Ajuste positivo de bodega'),`${fd(A.f)} ${A.h} · ${esc(A.u)}`)+`<dl class="lkv"><dt>Bodega</dt><dd>${esc(A.bod)}</dd><dt>Material</dt><dd>${cc(A.cod)} ${esc(A.desc)}</dd><dt>Cantidad</dt><dd><b style="color:${neg?'#DC2626':'#0E9F6E'}">${neg?'−':'+'}${qf(A.q,A.um)} ${A.um}</b></dd><dt>Existencia</dt><dd>${qf(A.ant,A.um)} → ${qf(A.post,A.um)} ${A.um}</dd><dt>Motivo</dt><dd>${esc(A.mot==='Otro'?'Otro: '+A.otro:A.mot)}</dd><dt>Observaciones</dt><dd>${esc(A.obs||'—')}</dd><dt>Valor (costo Siesa)</dt><dd>${A.cu?money(A.q*A.cu):'sin costo Siesa'}</dd></dl>
+ <p class="sub" style="margin-top:10px">Un ajuste guardado no se edita ni se borra. Si hubo un error, haga otro ajuste con el signo contrario: los dos quedan en el kárdex.</p>
+ <div class="mf">${abPuede()?`<button class="btn ghost" data-act="abCorr" data-v="${A.id}">${icon('redo',16)}Corregir con un ajuste contrario</button>`:''}<button class="btn" data-act="closeM">Cerrar</button></div>`,'s')}
+Object.assign(ACT,{
+ abNuevo:v=>{if(!abPuede()){toast('Solo Gerencia hace ajustes de inventario de bodega.','er');return}abNuevo(v)},
+ abTipo:v=>{abLee();ABF.tipo=v;abForm()},abRevisar,abVolver:()=>abForm(),abVer,
+ abCorr:v=>{const A=(S.ajb||[]).find(x=>x.id===v);if(!A)return;abNuevo(A.tipo==='+'?'-':'+',{bod:A.bod,cod:A.cod,q:String(A.q),mot:'Corrección de movimiento',obs:'Corrige '+A.id})},
+ abGo:async(v,el)=>{if(!ABF)return;const err=abValida();if(err){toast(err,'er');abForm();return}const F=ABF;
+  await sbAccion(el||$('#abGoBtn'),'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_ajbod_registrar',{p:{tok:F.tok,tipo:F.tipo,bod:F.bod,cod:F.cod,q:numIn(F.q),mot:F.mot,otro:F.otro,obs:F.obs}});if(error)throw error;
+   const m=MI[F.cod]||{um:''};ABF=null;await cargarDatos();closeModal();U.tab.ajw='bod';rerender();
+   toast(`${data.id} registrado: ${esc(F.cod)} en ${esc(F.bod)} pasó de ${qf(+data.antes)} a ${qf(+data.despues)} ${m.um}.`,'ok')})},
+ abClr:()=>{['abD','abH','abFB','abFR','abFT'].forEach(k=>delete U.f[k]);rerender()}});
+document.addEventListener('change',e=>{if(!ABF||!e.target.dataset||!e.target.dataset.ab)return;const id=e.target.id;setTimeout(()=>{if(!ABF)return;abLee();if(id==='abB')ABF.cod=ABF.tipo==='-'&&ABF.cod&&abExis(ABF.cod,ABF.bod)<=0?'':ABF.cod;abForm()},0)});
+let ABDB=0;document.addEventListener('input',e=>{if(!ABF||!e.target.dataset||!e.target.dataset.ab||e.target.tagName==='SELECT')return;clearTimeout(ABDB);const id=e.target.id;ABDB=setTimeout(()=>{abLee();abForm();const n=document.getElementById(id);if(n){n.focus();try{const l=n.value.length;n.setSelectionRange(l,l)}catch(x){}}},450)});
+
+/* ---------- pantalla: pestaña «Bodega (almacén)» ---------- */
+function abVista(){const f=U.f;const d=f.abD||addD(HOY,-90),h=f.abH||HOY;
+ const L=(S.ajb||[]).filter(a=>a.f>=d&&a.f<=h&&(!f.abFB||a.bod===f.abFB)&&(!f.abFT||a.tipo===f.abFT)&&(!f.abFR||nrmH(a.cod+' '+a.desc).includes(nrmH(f.abFR))));
+ const val=a=>(a.tipo==='-'?-1:1)*a.q*(a.cu||0);const up=L.filter(a=>a.tipo==='+'),dn=L.filter(a=>a.tipo==='-');const sv=X=>X.reduce((s,a)=>s+Math.abs(val(a)),0);const neto=L.reduce((s,a)=>s+val(a),0);
+ const puede=abPuede();
+ regT('ajb','Historial de ajustes de inventario de bodega',['Ajuste','Fecha','Hora','Tipo','Bodega','Código','Descripción','UM','Cantidad','Existencia anterior','Existencia posterior','Costo unitario Siesa','Valor','Motivo','Observaciones','Responsable'],L.map(a=>[a.id,a.f,a.h,a.tipo==='+'?'Positivo':'Negativo',a.bod,a.cod,a.desc,a.um,(a.tipo==='-'?-1:1)*a.q,a.ant,a.post,a.cu,val(a),a.mot==='Otro'?'Otro: '+a.otro:a.mot,a.obs,a.u]),'Ajustes a la existencia de las bodegas AL001 y MP001, sin proyecto. No se editan ni se borran; se corrigen con un ajuste contrario.');
+ return`<div class="ajhero"><div><div class="tzl1"><span></span>INVENTARIO DE BODEGA</div><h2>Ajuste de inventario de bodega</h2><p>Corrige la existencia de un material en AL001 o MP001 cuando lo físico no coincide con la app (por ejemplo, una lámina con menos kilos). No va a ningún proyecto; queda en el kárdex como «Ajuste» con su número AJB y el costo de Siesa.</p></div>
+ <div class="acts" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn" data-act="abNuevo" data-v="+" ${puede?'':'disabled title="Solo Gerencia"'}>${icon('plus',16)}Ajuste positivo (+)</button><button class="btn dng" data-act="abNuevo" data-v="-" ${puede?'':'disabled title="Solo Gerencia"'}>${icon('down',16)}Ajuste negativo (−)</button></div></div>
+ ${puede?'':`<div class="note i" style="margin-bottom:12px">${icon('info',16)}<span>Solo Gerencia hace ajustes de inventario de bodega. Usted puede ver el historial.</span></div>`}
+ <div class="g12 minis" style="margin-bottom:18px">
+  <div class="card kpi mini"><span class="k">Ajustes en el periodo</span><b>${L.length}</b><small>${fd(d)} a ${fd(h)}</small></div>
+  <div class="card kpi mini"><span class="k">Positivos</span><b style="color:var(--ok)">${up.length}</b><small>${money(sv(up))}</small></div>
+  <div class="card kpi mini"><span class="k">Negativos</span><b style="color:var(--er)">${dn.length}</b><small>${money(sv(dn))}</small></div>
+  <div class="card kpi mini"><span class="k">Efecto neto en el inventario</span><b style="color:${neto<0?'var(--er)':'var(--ok)'}">${money(neto)}</b><small>al costo de Siesa</small></div></div>
+ <div class="card"><div class="ch"><div><h3>Historial de ajustes de bodega</h3><p>${L.length} ajustes · existencia antes y después, motivo y responsable</p></div><div class="acts">${xbtns('ajb')}</div></div>
+ <div class="cfil"><div class="fld"><label for="abD">Desde</label><input class="inp" type="date" id="abD" data-f="abD" value="${d}"></div><div class="fld"><label for="abH">Hasta</label><input class="inp" type="date" id="abH" data-f="abH" value="${h}"></div>
+ <div class="fld"><label for="abFB">Bodega</label><select class="sel" id="abFB" data-f="abFB"><option value="">Todas</option>${ABOD.map(b=>`<option value="${b[0]}" ${b[0]===f.abFB?'selected':''}>${b[0]}</option>`).join('')}</select></div>
+ <div class="fld"><label for="abFR">Referencia</label><input class="inp" id="abFR" data-f="abFR" value="${esc(f.abFR||'')}" placeholder="Código o descripción"></div>
+ <div class="fld"><label for="abFT">Tipo</label><select class="sel" id="abFT" data-f="abFT"><option value="">Todos</option><option value="+" ${f.abFT==='+'?'selected':''}>Positivo</option><option value="-" ${f.abFT==='-'?'selected':''}>Negativo</option></select></div></div>
+ ${(f.abD||f.abH||f.abFB||f.abFR||f.abFT)?`<button class="btn link sm" data-act="abClr">Quitar filtros</button>`:''}
+ ${L.length?`<div class="tw" style="margin-top:10px"><table class="t"><thead><tr><th>Ajuste</th><th>Fecha</th><th>Tipo</th><th>Bodega</th><th>Material</th><th class="r">Cantidad</th><th class="r">Antes → después</th><th class="r">Valor</th><th>Motivo</th><th>Responsable</th></tr></thead><tbody>${L.map(a=>`<tr class="clk" data-act="abVer" data-v="${a.id}"><td><b>${a.id}</b></td><td data-l="Fecha">${fd(a.f)} ${a.h}</td><td data-l="Tipo"><span class="bd ${a.tipo==='-'?'er':'ok'}">${a.tipo==='-'?'Negativo':'Positivo'}</span></td><td data-l="Bodega">${a.bod}</td><td class="nm">${cc(a.cod)}<div class="sub">${esc(a.desc)}</div></td><td class="num" data-l="Cantidad"><b style="color:${a.tipo==='-'?'var(--er)':'var(--ok)'}">${a.tipo==='-'?'−':'+'}${qf(a.q,a.um)}</b> ${a.um}</td><td class="num" data-l="Existencia">${qf(a.ant,a.um)} → ${qf(a.post,a.um)}</td><td class="num" data-l="Valor">${a.cu?money(val(a)):'—'}</td><td data-l="Motivo"><span class="sub">${esc(a.mot==='Otro'?'Otro: '+a.otro:a.mot)}</span></td><td data-l="Responsable">${esc(a.u)}</td></tr>`).join('')}</tbody></table></div>`:`<div style="margin-top:10px">${empty('No hay ajustes de bodega con estos filtros.','scale')}</div>`}</div>`}
+{const _va=VIEWS.ajw;VIEWS.ajw=function(){const tab=U.tab.ajw||'proy';
+ const tabs=`<div class="tabs">${[['proy','En proceso (proyecto)'],['bod','Bodega (almacén)']].map(t=>`<button class="${tab===t[0]?'on':''}" data-act="tab" data-k="ajw" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+ return tabs+(tab==='bod'?abVista():_va.apply(this,arguments))}}
 
 </script>
 </body>
