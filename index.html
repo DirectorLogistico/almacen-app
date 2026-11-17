@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.10.1 · bloque 6';
+const VERSION='4.11.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -6754,6 +6754,48 @@ function abVista(){const f=U.f;const d=f.abD||addD(HOY,-90),h=f.abH||HOY;
 {const _va=VIEWS.ajw;VIEWS.ajw=function(){const tab=U.tab.ajw||'proy';
  const tabs=`<div class="tabs">${[['proy','En proceso (proyecto)'],['bod','Bodega (almacén)']].map(t=>`<button class="${tab===t[0]?'on':''}" data-act="tab" data-k="ajw" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>`;
  return tabs+(tab==='bod'?abVista():_va.apply(this,arguments))}}
+
+/* =====================================================================
+   v4.11.0 · IVA en la orden de compra (SQL 28)
+   - Nueva OC: hay que escoger «Sin IVA» o «Con IVA 19 %»; el total muestra
+     subtotal, IVA y total.
+   - Detalle y PDF de la OC: subtotal, IVA y total. Compras o Gerencia pueden
+     cambiar el IVA de una OC que no esté anulada.
+   - El costo del kárdex no cambia (sigue siendo el costo de Siesa).
+   ===================================================================== */
+const ocIvaV=o=>Math.round(ocVal(o)*((+o.iva||0)/100));
+const ocTotV=o=>ocVal(o)+ocIvaV(o);
+const ivaTxt=p=>+p?'Con IVA '+(+p)+' %':'Sin IVA';
+/* leer el IVA de cada OC */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();let r=[];try{r=await leerTodo('alm_ordenes_compra','id,iva_pct','id')}catch(e){console.warn('IVA de OC',e);r=[]}
+ const m={};r.forEach(x=>m[x.id]=+x.iva_pct||0);(S.ocs||[]).forEach(o=>{o.iva=m[o.id]||0})}}
+/* nueva OC: selector de IVA */
+{const _no=newOC;newOC=function(pre){_no(pre);if(!OCD)return;OCD.iva=null;const f=$('#ocF');if(!f||$('#ocIvaB'))return;
+ f.closest('.fld').insertAdjacentHTML('afterend',`<div class="fld" id="ocIvaB"><label>IVA de la compra (obligatorio)</label><div class="seg" role="group" aria-label="IVA de la compra"><button type="button" data-act="ocIva" data-v="0">Sin IVA</button><button type="button" data-act="ocIva" data-v="19">Con IVA 19 %</button></div><span class="sub" id="ocIvaInf">Escoge una opción.</span></div>`);ocIvaPinta()}}
+function ocIvaPinta(){const b=$('#ocIvaB');if(!b||!OCD)return;b.querySelectorAll('[data-act="ocIva"]').forEach(x=>x.classList.toggle('on',OCD.iva!=null&&+x.dataset.v===OCD.iva));
+ const inf=$('#ocIvaInf');if(inf)inf.textContent=OCD.iva==null?'Escoge una opción.':OCD.iva?'Se suma el 19 % al subtotal.':'La compra no lleva IVA.';ocTotPinta()}
+function ocTotPinta(){const t=$('#ocTot');if(!t||!OCD)return;const sub=OCD.lineas.reduce((a,l)=>a+(+l.ped||0)*(+l.pu||0),0);const p=OCD.iva||0,iv=Math.round(sub*p/100);
+ t.innerHTML=`Subtotal: <b>${money(sub)}</b> · IVA${p?' 19 %':''}: <b>${OCD.iva==null?'—':money(iv)}</b> · Total: <b>${money(sub+iv)}</b>`}
+{const _d=drawOCL;drawOCL=function(){const r=_d.apply(this,arguments);ocTotPinta();return r}}
+document.addEventListener('input',e=>{if(OCD&&e.target.dataset&&e.target.dataset.ocl)setTimeout(ocTotPinta,0)});
+ACT.ocIva=v=>{if(!OCD)return;OCD.iva=+v;ocIvaPinta()};
+{const _so=ACT.saveOC;ACT.saveOC=async(v,el)=>{if($('#ocIvaB')&&OCD&&OCD.iva==null){toast('Escoge si la compra es «Sin IVA» o «Con IVA 19 %».','er');return}return _so(v,el)}}
+{const _rpc=SB.rpc.bind(SB);SB.rpc=function(fn,args,o){if(fn==='alm_oc_crear'&&args&&args.p&&args.p.iva==null&&$('#ocIvaB')&&OCD&&OCD.iva!=null)args=Object.assign({},args,{p:Object.assign({},args.p,{iva:OCD.iva})});return _rpc(fn,args,o)}}
+/* detalle de la OC */
+{const _v=ocVer;ocVer=function(id){_v(id);const o=S.ocs.find(x=>x.id===id);if(!o)return;const m=$('#modal');if(!m)return;
+ const dts=[...m.querySelectorAll('dt')];const dt=dts.find(x=>x.textContent==='Valor total');if(!dt)return;const dd=dt.nextElementSibling;
+ dt.textContent='Subtotal (sin IVA)';dd.innerHTML=`<b>${money(ocVal(o))}</b>`;
+ const puede=can('oc.new')&&o.estado!=='Anulada';
+ dd.insertAdjacentHTML('afterend',`<dt>IVA</dt><dd>${ivaTxt(o.iva)} · <b>${money(ocIvaV(o))}</b>${puede?` <button class="btn link sm" data-act="ocIvaCambia" data-v="${o.id}">Cambiar</button>`:''}</dd><dt>Total con IVA</dt><dd><b>${money(ocTotV(o))}</b></dd>`)}}
+ACT.ocIvaCambia=v=>{const o=S.ocs.find(x=>x.id===v);if(!o)return;
+ modal(mh('IVA de '+o.id,esc(o.prov))+`<p>Hoy: <b>${ivaTxt(o.iva)}</b>. Subtotal ${money(ocVal(o))}.</p><div class="mf"><button class="btn ghost" data-act="ocVer" data-v="${o.id}">Volver</button><button class="btn ghost" data-act="ocIvaGo" data-v="${o.id}|0">Sin IVA</button><button class="btn" data-act="ocIvaGo" data-v="${o.id}|19">Con IVA 19 %</button></div>`,'s')};
+ACT.ocIvaGo=async(v,el)=>{const [id,p]=String(v).split('|');await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_oc_iva',{p_id:id,p_pct:+p});if(error)throw error;await cargarDatos();rerender();ocVer(id);toast(id+': '+ivaTxt(+p)+'.','ok')})};
+if(typeof ACT_PERM!=='undefined')Object.assign(ACT_PERM,{ocIvaCambia:'oc.new',ocIvaGo:'oc.new'});
+/* PDF de la OC con subtotal, IVA y total */
+ocPdf=async function(id){const o=S.ocs.find(x=>x.id===id);await toPDF('Latamks_'+o.id,'Orden de compra '+o.id,'Proveedor: '+o.prov,[{kv:[['Número',o.id],['Fecha de la OC',fd(o.f)],['Proveedor',o.prov],['Estado',o.estado],['IVA',ivaTxt(o.iva)],['Elaboró',o.u||''],['Observación',o.obs||'—']]},{cols:['Código','Descripción','UM','Cantidad','Precio unitario','Valor'],rows:o.lineas.map(l=>{const m=M(l.cod);return[l.cod,m.desc,m.um,nf2.format(l.ped),money(l.pu),money(l.ped*l.pu)]}).concat([['','','','','SUBTOTAL',money(ocVal(o))],['','','','',(+o.iva?'IVA 19 %':'IVA'),money(ocIvaV(o))],['','','','','TOTAL',money(ocTotV(o))]])},{p:'Entregar en: Latamks S.A.S. · Zona Franca La Cayena. Toda entrega debe traer remisión o factura con el número de esta OC. Las láminas deben venir con su MTR (certificado de material).'},{p:'\n\n______________________________          ______________________________\nElaboró (almacén)                                       Aprobó (gerencia)'}],false)};
+/* lista de OC: el valor es antes de IVA */
+{const _vo=VIEWS.oc;VIEWS.oc=function(){const h=_vo.apply(this,arguments);return h.replace(/(<th class="r?">)Valor(<\/th>)/,'$1Valor sin IVA$2')}}
+ACT.ocVer=v=>ocVer(v);
 
 </script>
 </body>
