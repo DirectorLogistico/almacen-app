@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.11.0 · bloque 6';
+const VERSION='4.12.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4272,7 +4272,7 @@ const nDesc=s=>String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'
   leerTodo('alm_materiales','cod,origen,es_pieza_corte','cod')]);
  ex.forEach(x=>{const m=MI[x.cod];if(!m)return;m.src=x.origen||'Siesa';if(x.es_pieza_corte){m.cl=true;if(!(m.stk.AL001>0)){delete m.stk.AL001;delete m.ub.AL001}if(m.stk.MP001==null){m.stk.MP001=0;m.ub.MP001=m.ub.MP001||''}}});
  EQDB={};eq.forEach(e=>EQDB[e.clave]=e.cod);
- const B={};bo.forEach(l=>{(B[l.proyecto]=B[l.proyecto]||[]).push({sec:l.seccion,cod:l.cod,desc:l.descripcion||(MI[l.cod]||{}).desc||l.cod,q:+l.cantidad,nota:l.nota||undefined,codBom:l.cod_bom||undefined})});
+ const B={};bo.forEach(l=>{(B[l.proyecto]=B[l.proyecto]||[]).push({id:l.id,sec:l.seccion,cod:l.cod,desc:l.descripcion||(MI[l.cod]||{}).desc||l.cod,q:+l.cantidad,nota:l.nota||undefined,codBom:l.cod_bom||undefined})});
  S.proys=pr.map(p=>({id:p.id,op:p.op,cliente:p.cliente,desc:p.descripcion,modelo:p.modelo,estado:p.estado,creado:p.inicio,entrega:p.entrega||'',vin:p.vin,po:p.po,ocCli:{f:p.oc_fecha||'',valor:+p.oc_valor||0},ot:p.ot_estado==='Liberada'?{estado:'Liberada',por:p.ot_por,f:(p.ot_fecha||'').slice(0,10),h:(p.ot_fecha||'').slice(11,16),num:p.op}:{estado:p.ot_estado||'Borrador',f:p.inicio},fotos:0,mb:0,bom:(B[p.id]||[]).map(l=>{if(!l.nota)delete l.nota;if(!l.codBom)delete l.codBom;return l}),bomLog:[]})).sort((a,b)=>b.id.localeCompare(a.id));
 }}
 
@@ -6796,6 +6796,85 @@ ocPdf=async function(id){const o=S.ocs.find(x=>x.id===id);await toPDF('Latamks_'
 /* lista de OC: el valor es antes de IVA */
 {const _vo=VIEWS.oc;VIEWS.oc=function(){const h=_vo.apply(this,arguments);return h.replace(/(<th class="r?">)Valor(<\/th>)/,'$1Valor sin IVA$2')}}
 ACT.ocVer=v=>ocVer(v);
+
+/* ---------- v4.11.1 · Indicadores e informe del IVA en Órdenes de compra ---------- */
+function ocIvaRes(){const V=S.ocs.filter(o=>o.estado!=='Anulada');const con=V.filter(o=>+o.iva>0),sin=V.filter(o=>!(+o.iva>0));
+ const recV=o=>o.lineas.reduce((a,l)=>a+Math.min(+l.rec||0,+l.ped||0)*(+l.pu||0),0);
+ const ivaRec=con.reduce((a,o)=>a+Math.round(recV(o)*(+o.iva)/100),0),ivaTot=con.reduce((a,o)=>a+ocIvaV(o),0);
+ const mes=HOY.slice(0,7),ivaMes=con.filter(o=>String(o.f).slice(0,7)===mes).reduce((a,o)=>a+ocIvaV(o),0);
+ return{V,con,sin,ivaRec,ivaTot,ivaPend:ivaTot-ivaRec,ivaMes,valCon:con.reduce((a,o)=>a+ocTotV(o),0),valSin:sin.reduce((a,o)=>a+ocVal(o),0)}}
+{const _vo=VIEWS.oc;VIEWS.oc=function(){let h=_vo.apply(this,arguments);const R=ocIvaRes();
+ /* informe: cada línea con su IVA y total */
+ const fe=U.f.oE==null?'abiertas':U.f.oE,q=(U.f.oQ||'').toLowerCase();
+ const L=S.ocs.filter(o=>(fe==='todas'||(fe==='abiertas'?(o.estado==='Abierta'||o.estado==='Parcial'):o.estado===fe))&&(!q||(o.id+' '+o.prov+' '+o.obs+' '+o.lineas.map(l=>l.cod).join(' ')).toLowerCase().includes(q)));
+ regT('oc','Órdenes de compra',['OC','Fecha OC','Proveedor','Estado','IVA de la OC','Código','Descripción','UM','Cantidad pedida','Recibida','Pendiente','Precio unitario','Valor sin IVA','Valor IVA','Total con IVA'],L.flatMap(o=>o.lineas.map(l=>{const m=M(l.cod);const v=Math.round(l.ped*(l.pu||0)),iv=Math.round(v*(+o.iva||0)/100);return[o.id,o.f,o.prov,o.estado,ivaTxt(o.iva),l.cod,m.desc,m.um,l.ped,l.rec,Math.max(0,l.ped-l.rec),Math.round(l.pu||0),v,iv,v+iv]})),
+  `IVA en compras: ${money(R.ivaTot)} (recibido ${money(R.ivaRec)} · por recibir ${money(R.ivaPend)}) · OC con IVA: ${R.con.length} · OC sin IVA: ${R.sin.length} · sin contar anuladas`);
+ const fila=`<div class="g12 minis"><div class="c4">${kpi('IVA en compras',mm(R.ivaTot),`recibido ${mm(R.ivaRec)} · por recibir ${mm(R.ivaPend)} · este mes ${mm(R.ivaMes)}`,'trend')}</div><div class="c4">${kpi('OC con IVA 19 %',R.con.length,mm(R.valCon)+' con IVA','check')}</div><div class="c4">${kpi('OC sin IVA',R.sin.length,mm(R.valSin)+' en compras','box')}</div></div>`;
+ const i=h.indexOf('<div class="g12 minis">');if(i<0)return h;const j=h.indexOf('<div class="card">',i);return j<0?h:h.slice(0,j)+fila+h.slice(j)}}
+function ocIvaResumenKV(){const R=ocIvaRes();return[['IVA en compras (OC no anuladas)',money(R.ivaTot)],['IVA de lo ya recibido',money(R.ivaRec)],['IVA por recibir',money(R.ivaPend)],['IVA de este mes',money(R.ivaMes)],['OC con IVA 19 %',R.con.length+' · '+money(R.valCon)+' con IVA'],['OC sin IVA',R.sin.length+' · '+money(R.valSin)]]}
+{const _x=ACT.xls;ACT.xls=async v=>{if(v!=='oc')return _x(v);const t=XT.oc;if(!t)return;await toXLSX('Latamks_Ordenes_de_compra',[{name:'Resumen IVA',cols:['Indicador','Valor'],rows:ocIvaResumenKV()},{name:'Órdenes de compra',cols:t.cols,rows:t.rows}])}}
+{const _p=ACT.pdf;ACT.pdf=async v=>{if(v!=='oc')return _p(v);const t=XT.oc;if(!t)return;await toPDF('Latamks_Ordenes_de_compra',t.title,'Resumen del IVA y detalle por línea',[{kv:ocIvaResumenKV()},{cols:t.cols,rows:t.rows.map(r=>r.map(x=>typeof x==='number'?nf2.format(x):x))}],true)}}
+
+/* =====================================================================
+   v4.12.0 · Gerencia edita el BOM directamente (SQL 29) — cambia las decisiones 76 y 100
+   Proyectos › BOM y avance: lápiz (editar línea), basura (eliminar línea),
+   «Agregar material», «Reemplazar BOM (Excel)» y «Eliminar BOM».
+   Solo Gerencia; motivo obligatorio; historial BM-0001… El BOM no puede quedar
+   por debajo de lo entregado o pedido (lo valida la base de datos).
+   ===================================================================== */
+const bgPuede=()=>U.user&&U.user.rol==='Gerencia';
+PERM['Gerencia']=PERM['Gerencia']==='*'?'*':[...new Set([...(PERM['Gerencia']||[]),'bom.ger'])];
+['bomEd','bomDel','bomDelAll','bomRep'].forEach(a=>ACT_PERM[a]='bom.ger');
+const bgMot=(id,ph)=>`<div class="fld" style="margin-top:12px"><label for="${id}">Motivo del cambio (obligatorio)</label><input class="inp" id="${id}" maxlength="300" placeholder="${ph||'Ej.: plano revisión B, cantidad corregida por Diseño'}"></div>`;
+const bgNo=()=>{toast('Solo Gerencia modifica o elimina el BOM.','er')};
+function bgMotivo(id){const v=(($('#'+id)||{}).value||'').trim();if(v.length<4){toast('Escribe el motivo del cambio (mínimo 4 letras).','er');const e=$('#'+id);if(e)e.focus();return null}return v}
+
+/* ---------- historial: correcciones aprobadas + cambios directos ---------- */
+{const _cd=cargarDatos;cargarDatos=async function(){await _cd();let r=[];
+ try{r=await leerTodo('alm_bom_cambios','id,fecha,hora,proyecto,accion,cod,cod_antes,seccion,q_antes,q_despues,lineas_antes,lineas_despues,motivo,archivo,usuario','id')}catch(e){console.warn('cambios del BOM',e);r=[]}
+ S.bomCambios=r;const txt=c=>{const n=x=>x==null?'':qf(+x);
+  if(c.accion==='Editar línea')return`${c.id}: editó ${c.cod_antes?c.cod_antes+' → ':''}${c.cod} (${c.seccion}) ${n(c.q_antes)} → ${n(c.q_despues)} · ${c.motivo}`;
+  if(c.accion==='Agregar línea')return`${c.id}: agregó ${c.cod} · ${n(c.q_despues)} en ${c.seccion} · ${c.motivo}`;
+  if(c.accion==='Eliminar línea')return`${c.id}: eliminó ${c.cod} · ${n(c.q_antes)} de ${c.seccion} · ${c.motivo}`;
+  if(c.accion==='Reemplazar BOM')return`${c.id}: reemplazó el BOM (${c.lineas_antes} → ${c.lineas_despues} líneas${c.archivo?', '+c.archivo:''}) · ${c.motivo}`;
+  return`${c.id}: eliminó el BOM completo (${c.lineas_antes} líneas) · ${c.motivo}`};
+ S.proys.forEach(p=>{const mios=r.filter(c=>c.proyecto===p.id).map(c=>({f:c.fecha,h:c.hora,u:c.usuario,t:txt(c),_k:c.fecha+' '+c.hora+' '+c.id}));
+  const viejos=(p.bomLog||[]).map(x=>Object.assign({_k:(x.f||'')+' '+(x.h||'')},x));
+  p.bomLog=[...viejos,...mios].sort((a,b)=>String(a._k).localeCompare(String(b._k)))})}}
+
+/* ---------- editar o agregar una línea ---------- */
+ACT.bomEd=v=>{if(!bgPuede())return bgNo();bomEd(v);const mf=$('#modal .mf');if(mf&&!$('#bgMot'))mf.insertAdjacentHTML('beforebegin',bgMot('bgMot'))};
+ACT.bomSave=async(v,el)=>{if(!bgPuede())return bgNo();if(!BED)return;const p=P(BED.pid);const ss=$('#beSecS')?$('#beSecS').value:'__nueva';
+ let cod=$('#beCod').value.trim().toUpperCase();const sec=(ss==='__nueva'?$('#beSec').value.trim().toUpperCase():ss)||'GENERAL';const q=numIn($('#beQ').value);const desc=$('#beDesc').value.trim();
+ if(!cod||!(q>0)){toast('Escribe el código y una cantidad mayor que 0.','er');return}
+ if(!MI[cod]){const e=equiv(cod);if(e){cod=e.cod;toast(`${esc($('#beCod').value.trim())} no existe tal cual; se usó el código de Siesa ${esc(e.cod)}.`,'i')}}
+ const mot=bgMotivo('bgMot');if(mot==null)return;const l=BED.ix>=0?p.bom[BED.ix]:null;
+ if(l&&!l.id){toast('Actualiza la pantalla (⟳) e intenta de nuevo.','er');return}
+ await sbAccion(el||$('#modal .mf .btn:not(.ghost)'),'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_bom_linea_guardar',{p:{proy:p.id,id:l?String(l.id):'',sec,cod,desc,q,motivo:mot}});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${data.id}: BOM del ${p.id} actualizado.`,'ok')})};
+/* ---------- eliminar una línea ---------- */
+ACT.bomDel=v=>{if(!bgPuede())return bgNo();const [pid,i]=v.split('|');const p=P(pid),l=p.bom[+i];if(!l)return;const ent=entregado(pid)[l.cod]||0;
+ modal(mh('Eliminar línea del BOM',p.id+' · '+esc(p.desc))+`<p>Se quita <b>${esc(l.cod)}</b> (${esc(l.desc)}, ${qf(l.q)}) de la sección <b>${esc(l.sec)}</b>.</p>${ent?`<div class="note wa">${icon('warn',16)}<span>Ya se entregaron <b>${qf(ent)}</b> de este código al proyecto. Si no queda otra línea que lo cubra, la base no deja eliminarla: primero se registra la devolución.</span></div>`:''}${bgMot('bgMotD','Ej.: la pieza no va en este modelo')}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="bomDelGo" data-v="${v}">${icon('trash',16)}Eliminar línea</button></div>`,'s')};
+ACT.bomDelGo=async(v,el)=>{if(!bgPuede())return bgNo();const [pid,i]=v.split('|');const p=P(pid),l=p.bom[+i];if(!l||!l.id){toast('Actualiza la pantalla (⟳) e intenta de nuevo.','er');return}const mot=bgMotivo('bgMotD');if(mot==null)return;
+ await sbAccion(el,'Eliminando…',async()=>{const {data,error}=await SB.rpc('alm_bom_linea_eliminar',{p_proy:pid,p_linea:l.id,p_motivo:mot});if(error)throw error;await cargarDatos();closeModal();rerender();toast(`${data.id}: se quitó ${esc(l.cod)} del BOM del ${pid}.`,'ok')})};
+/* ---------- reemplazar el BOM con Excel ---------- */
+ACT.bomRep=v=>{if(!bgPuede())return bgNo();bomRep(v);const mf=$('#modal .mf');if(mf&&!$('#bgMotR'))mf.insertAdjacentHTML('beforebegin',bgMot('bgMotR','Ej.: Diseño envió el BOM revisión C'))};
+ACT.bomRepGo=async(v,el)=>{if(!bgPuede())return bgNo();if(!NP||!NP.bom||!NP.bom.length){toast('Primero sube el archivo del BOM.','er');return}const mot=bgMotivo('bgMotR');if(mot==null)return;
+ const bom=NP.bom;const eqv=[];
+ $$('[data-eqi]').forEach(s=>{const l=bom[+s.dataset.eqi];if(!l)return;const orig=l.sinCod?'':l.cod;
+  if(s.value){l.codBom=l.sinCod?'(sin código)':orig;l.cod=s.value;eqv.push({clave:l.sinCod?'DESC:'+nDesc(l.desc):orig,cod:s.value})}
+  else if(l.sinCod){l.cod='SC'+v+'-'+String(l._n).padStart(2,'0')}});
+ mapBOM(bom);const lineas=bom.map(l=>({sec:l.sec,cod:l.cod,codBom:l.codBom||'',desc:l.desc,q:l.q,nota:l.nota||''}));
+ await sbAccion(el,'Reemplazando…',async()=>{const {data,error}=await SB.rpc('alm_bom_reemplazar',{p_proy:v,p_lineas:lineas,p_equiv:eqv,p_archivo:NP.src||'',p_motivo:mot});if(error)throw error;
+  NP=null;await cargarDatos();closeModal();rerender();toast(`${data.id}: BOM del ${v} reemplazado (${data.antes} → ${data.despues} líneas).`,'ok')})};
+/* ---------- eliminar el BOM completo ---------- */
+ACT.bomDelAll=v=>{if(!bgPuede())return bgNo();const p=P(v);if(!p)return;
+ modal(mh('Eliminar el BOM del '+p.id,esc(p.desc))+`<div class="note er">${icon('warn',16)}<span>Se borran las <b>${p.bom.length} líneas</b> del BOM. Las entregas ya hechas siguen en el kárdex y en los costos. Si algún código ya se entregó o está pedido en una solicitud abierta, la base no deja eliminarlo: primero se registra la devolución o se anula la solicitud.</span></div>${bgMot('bgMotA','Ej.: se cargó el BOM de otro modelo')}
+ <div class="fld" style="margin-top:12px"><label for="bgConf">Para confirmar, escribe ELIMINAR</label><input class="inp" id="bgConf" placeholder="ELIMINAR"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="bomDelAllGo" data-v="${p.id}">${icon('trash',16)}Eliminar BOM</button></div>`,'s')};
+ACT.bomDelAllGo=async(v,el)=>{if(!bgPuede())return bgNo();const mot=bgMotivo('bgMotA');if(mot==null)return;if((($('#bgConf')||{}).value||'').trim().toUpperCase()!=='ELIMINAR'){toast('Escribe ELIMINAR para confirmar.','er');return}
+ await sbAccion(el,'Eliminando…',async()=>{const {data,error}=await SB.rpc('alm_bom_reemplazar',{p_proy:v,p_lineas:[],p_equiv:[],p_archivo:'',p_motivo:mot});if(error)throw error;await cargarDatos();closeModal();rerender();toast(`${data.id}: se eliminó el BOM del ${v} (${data.antes} líneas).`,'ok')})};
 
 </script>
 </body>
