@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.13.0 · bloque 6';
+const VERSION='4.14.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -6907,6 +6907,48 @@ async function fpCargar(file){if(!file)return;if(!/^image\/(png|jpeg|webp)$/.tes
  catch(e){toast(e.message||'No se pudo leer la imagen','er')}finally{URL.revokeObjectURL(url)}}
 {const _cl=ACT.fpClear;ACT.fpClear=v=>{_cl(v);const f=$('#fpFile');if(f)f.value='';const n=$('#fpFileN');if(n)n.textContent='PNG o JPG · firma en tinta oscura sobre papel blanco'}}
 ACT.firmaPad=v=>firmaPad(v);
+
+/* =====================================================================
+   v4.14.0 · Recibo de mercancía: descargar el FORMATO EN BLANCO (FR-ALM-001)
+   Botón «Formato en blanco (PDF)» en Recibo de mercancía, para llenarlo a mano
+   cuando no hay equipo a la mano. Mismo diseño que el PDF del recibo de la app.
+   Solo Gerencia y el Auxiliar (los mismos que hacen el recibo). Sin SQL nuevo.
+   ===================================================================== */
+function recPdfBlanco(){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),X=12,AW=W-24;
+ const azul=[36,52,107],gris=[90,100,130];let y=12;const L='____________________';
+ const pie=()=>{const n=d.internal.getNumberOfPages();for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(...gris);d.text('FR-ALM-001 · Versión 01 · Formato de Verificación y Recibo de Mercancía · en blanco · Página '+i+' de '+n,W-X,H-7,{align:'right'});d.text('Latamks Almacén · Confidencial',X,H-7)}};
+ d.setDrawColor(...azul);d.setLineWidth(.4);d.rect(X,y,AW,24);let tx=X+3;
+ if(S.cfg&&S.cfg.logo){try{const f=/image\/png/.test(S.cfg.logo)?'PNG':'JPEG';d.addImage(S.cfg.logo,f,X+2,y+3,30,18,undefined,'FAST');tx=X+35}catch(e){}}
+ d.line(W-X-52,y,W-X-52,y+24);d.setTextColor(20);d.setFont('helvetica','bold');d.setFontSize(11.5);d.text('FORMATO DE VERIFICACIÓN Y RECIBO DE MERCANCÍA',tx+(W-X-52-tx)/2,y+8,{align:'center'});
+ d.setFont('helvetica','normal');d.setFontSize(8.5);d.text('Reporte de sobrantes, faltantes y material dañado o no conforme',tx+(W-X-52-tx)/2,y+13.5,{align:'center'});
+ d.setFontSize(7.5);d.setTextColor(...gris);d.text('LATAMKS S.A.S. · NIT 901.570.202-4 · Zona Franca La Cayena, Barranquilla',tx+(W-X-52-tx)/2,y+18.5,{align:'center'});
+ d.setTextColor(20);d.setFontSize(8);[['Código:','FR-ALM-001'],['Versión:','01'],['Área:','Almacén'],['Consecutivo N.º:','__________']].forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-50,y+5.5+i*5);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-24,y+5.5+i*5)});
+ y+=28;
+ const sec=(n,t,sub)=>{if(y>H-40){d.addPage();y=14}d.setFillColor(...azul);d.rect(X,y,AW,6.5,'F');d.setTextColor(255);d.setFont('helvetica','bold');d.setFontSize(9);d.text(n+'. '+t,X+2.5,y+4.5);if(sub){d.setFont('helvetica','normal');d.setFontSize(7.5);d.text(sub,W-X-2.5,y+4.5,{align:'right'})}y+=8.5;d.setTextColor(20)};
+ const tabla=(head,body,cw,alto)=>{d.autoTable({startY:y,margin:{left:X,right:X},head:[head],body,
+  styles:{fontSize:7.6,cellPadding:1.6,lineColor:[180,186,200],lineWidth:.15,textColor:20,valign:'middle',minCellHeight:alto||8},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold',minCellHeight:6},columnStyles:cw||{},theme:'grid'});y=d.lastAutoTable.finalY+5};
+ const filas=(n,f)=>Array.from({length:n},(_,i)=>f(i+1));
+ sec(1,'DATOS DEL RECIBO');
+ tabla(['Dato','Valor','Dato','Valor'],[['Fecha de recibo','____/____/______','Proveedor',L],['Hora de llegada','____:____','NIT del proveedor',L],['N.º de factura(s)',L,'N.º de orden de compra',L],['Placa del vehículo',L,'N.º de FMM (Appolo)',L]],
+  {0:{fontStyle:'bold',cellWidth:38},2:{fontStyle:'bold',cellWidth:44}},7);
+ sec(2,'SOBRANTES','Llegó más de lo facturado o sin factura');
+ d.setFontSize(7.5);d.setTextColor(...gris);d.text('El material sobrante se separa y se marca «PENDIENTE DOCUMENTO». No se entrega a producción hasta que gerencia decida.',X,y-1);y+=2;d.setTextColor(20);
+ tabla(['#','Código','Descripción','Cant. sobrante','¿Tiene OC?','Ubicación donde quedó','Decisión de gerencia'],filas(4,i=>[i,'','','','[  ] Sí [  ] No','','[  ] Pedir factura\n[  ] Devolver\n[  ] Otra: ________']),{0:{cellWidth:7},3:{cellWidth:18},4:{cellWidth:22},6:{cellWidth:34}},12);
+ sec(3,'FALTANTES','Facturado pero no llegó');
+ tabla(['#','Código','Descripción','Cant. faltante','Factura afectada','Decisión de gerencia'],filas(4,i=>[i,'','','','','[  ] Reclamar envío\n[  ] Nota crédito\n[  ] Otra: ________']),{0:{cellWidth:7},3:{cellWidth:18},5:{cellWidth:36}},12);
+ sec(4,'MATERIAL DAÑADO O NO CONFORME');
+ tabla(['#','Código','Descripción','Cantidad','Tipo de daño','¿Se tomó foto?'],filas(2,i=>[i,'','','','','[  ] Sí [  ] No']),{0:{cellWidth:7},3:{cellWidth:18},5:{cellWidth:28}},8);
+ sec(5,'RESULTADO Y ENVÍO A GERENCIA');d.setFontSize(8.6);
+ d.text('[  ] TODO LLEGÓ CONFORME (sin sobrantes, faltantes ni daños)',X,y);y+=5.5;
+ d.text('[  ] CON DIFERENCIAS  -  Enviado por correo a gerencia el ____/____/______ a las ____:____ por ______________________',X,y);y+=6;
+ d.setFont('helvetica','bold');d.text('Observaciones generales:',X,y);d.setFont('helvetica','normal');y+=1.5;d.rect(X,y,AW,16);y+=20;
+ sec(6,'FIRMAS');
+ d.autoTable({startY:y,margin:{left:X,right:X},head:[['Rol','Nombre','Cargo','Firma','Fecha']],body:[['Realizó la verificación','','','',''],['Revisó (jefe de almacén)','','','','']],theme:'grid',
+  styles:{fontSize:8,cellPadding:2,minCellHeight:18,valign:'middle',lineColor:[180,186,200],lineWidth:.15,textColor:20},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold',minCellHeight:7},columnStyles:{0:{fontStyle:'bold',cellWidth:36},3:{cellWidth:55},4:{cellWidth:24}}});
+ pie();return d}
+ACT.recBlanco=()=>{if(!REC_ED()){toast('Solo el Auxiliar o Gerencia descargan el formato.','wa');return}try{const d=recPdfBlanco();saveFile('FR-ALM-001_formato_en_blanco.pdf',d.output('blob'));toast('Formato en blanco descargado.','ok')}catch(e){console.error(e);toast('No se pudo generar el PDF: '+esc(e.message||e),'er')}};
+{const _vr=VIEWS.rec;VIEWS.rec=function(){const h=_vr.apply(this,arguments);const k='<button class="btn" data-act="recNew"';if(h.indexOf(k)<0||h.includes('data-act="recBlanco"'))return h;
+ return h.replace(k,`<button class="btn ghost" data-act="recBlanco" ${REC_ED()?'':'disabled title="Solo el Auxiliar o Gerencia"'}>${icon('pdf',16)}Formato en blanco (PDF)</button>`+k)}}
 
 </script>
 </body>
