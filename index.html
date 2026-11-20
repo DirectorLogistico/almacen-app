@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.15.0 · bloque 6';
+const VERSION='4.16.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4742,7 +4742,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios','alm_modelos'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -6971,7 +6971,7 @@ PERM['Gerencia']=PERM['Gerencia']==='*'?'*':[...new Set([...(PERM['Gerencia']||[
 Object.assign(ACT_PERM,{matDel:'mat.del',matInact:'mat.new',matAct:'mat.new',matDelGo:'mat.del',matInactGo:'mat.new',matActGo:'mat.new'});
 let MAT_INACT=[],MAT_CAMB=[];
 document.head.insertAdjacentHTML('beforeend','<style>#emCod:disabled{opacity:.72;cursor:not-allowed}</style>');
-{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(!U.user)return r;
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.kiosk)return r;
  try{const {data,error}=await SB.rpc('alm_materiales_inactivos');if(error)throw error;MAT_INACT=data||[]}catch(e){MAT_INACT=[]}
  try{MAT_CAMB=await leerTodo('alm_materiales_cambios','id,fecha,hora,accion,cod,cod_nuevo,descripcion,motivo,usuario','id')}catch(e){MAT_CAMB=[]}
  return r}}
@@ -7049,6 +7049,69 @@ ACT.matInactivos=()=>{const H=MAT_CAMB.slice().reverse().slice(0,60);
 /* Botón «Inactivos (n)» en la barra de Materiales, junto a Excel y PDF */
 {const _vm=VIEWS.mat;VIEWS.mat=function(){const h=_vm.apply(this,arguments);const b=`<button class="btn ghost" data-act="matInactivos">${icon('inbox',16)}Inactivos (${MAT_INACT.length})</button>`;
  const i=h.indexOf('<div class="sp"></div>');return i<0?h:h.slice(0,i)+'<div class="sp"></div>'+b+h.slice(i+22)}}
+
+/* =====================================================================
+   v4.16.0 · Modelos de tanque en la base (SQL 31)
+   - La lista de modelos sale de alm_modelos (antes era fija en el código).
+   - En Modelos y kits: tarjeta «Modelos de tanque» con «Nuevo modelo», lápiz
+     para editar e Inactivar/Activar. Solo Gerencia y Diseño (los demás lo ven
+     desactivado).
+   - Al crear un proyecto solo salen los modelos activos.
+   - 3D de un modelo nuevo: estimado por galones (o por el largo que se escriba).
+   ===================================================================== */
+PERM['Diseño']=[...new Set([...(PERM['Diseño']||[]),'mod.crear'])];
+Object.assign(ACT_PERM,{modNew:'mod.crear',modEd:'mod.crear',modGo:'mod.crear',modAct:'mod.crear'});
+let MOD_DB=null;
+/* largo (m) y sección estimados por galones, interpolando entre los modelos conocidos */
+function modEst(gal){const R=MODELOS0.slice().sort((a,b)=>a.gal-b.gal);if(gal<=R[0].gal)return{L:R[0].L*gal/R[0].gal,sc:R[0].sc};
+ for(let i=1;i<R.length;i++)if(gal<=R[i].gal){const a=R[i-1],b=R[i],t=(gal-a.gal)/(b.gal-a.gal);return{L:a.L+(b.L-a.L)*t,sc:a.sc+(b.sc-a.sc)*t}}
+ const z=R[R.length-1];return{L:z.L*Math.cbrt(gal/z.gal),sc:z.sc*Math.cbrt(gal/z.gal)}}
+function modAplicar(){if(!MOD_DB||!S)return;const prev=S.modelos||[];
+ S.modelos=MOD_DB.map(r=>{let m=prev.find(x=>x.id===r.id);const nuevo=!m;if(!m)m={id:r.id,bom:[],kits:[],nota:''};
+  const e=modEst(+r.galones);m.nom=r.nombre;m.gal=+r.galones;m.tipo=r.tipo;m.activo=r.activo;m.largo=r.largo_m==null?null:+r.largo_m;m.hist=r.hist||[];
+  if(r.plano&&!m.plano)m.plano=r.plano;
+  if(nuevo||m.largo){m.L=+(m.largo||e.L).toFixed(3);if(nuevo)m.sc=+e.sc.toFixed(3)}
+  return m})}
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.kiosk)return r;
+ try{MOD_DB=await leerTodo('alm_modelos','id,nombre,galones,tipo,largo_m,plano,nota,activo,orden,hist','orden');modAplicar()}catch(e){MOD_DB=null}  /* sin SQL 31: sigue la lista fija */
+ return r}}
+
+/* Nuevo proyecto: solo modelos activos */
+{const _np=newProj;newProj=function(){const all=S.modelos;S.modelos=(all||[]).filter(m=>m.activo!==false);try{return _np.apply(this,arguments)}finally{S.modelos=all}};ACT.newP=(...a)=>newProj(...a)}
+
+/* ---------- Tarjeta «Modelos de tanque» ---------- */
+{const _vm=VIEWS.mod;VIEWS.mod=function(){const h=_vm.apply(this,arguments);if(!MOD_DB)return h;const M_=S.modelos||[];
+ const pj=id=>S.proys.filter(p=>p.modelo===id&&p.id!=='00000');
+ regT('modl','Modelos de tanque',['Modelo','Nombre','Tipo','Galones','Largo (m)','Proyectos','Estado'],M_.map(m=>[m.id,m.nom,m.tipo||'Tanque',m.gal,+(+m.L).toFixed(2),pj(m.id).length,m.activo===false?'Inactivo':'Activo']));
+ const card=`<div class="card"><div class="ch"><div><h3>Modelos de tanque</h3><p>Los que salen al crear un proyecto. Gerencia y Diseño crean, editan e inactivan; no se borran.</p></div><div class="acts">${xbtns('modl')}<button class="btn sm" data-act="modNew">${icon('plus',14)}Nuevo modelo</button></div></div>
+ <div class="tw"><table class="t"><thead><tr><th>Modelo</th><th>Nombre</th><th>Tipo</th><th class="r">Galones</th><th class="r">Largo</th><th>Proyectos</th><th>Estado</th><th></th></tr></thead><tbody>${M_.map(m=>{const p=pj(m.id);return`<tr${m.activo===false?' style="opacity:.6"':''}><td class="nm ttl"><span class="mcap">${esc(m.id)}</span></td><td data-l="Nombre">${esc(m.nom)}</td><td data-l="Tipo">${esc(m.tipo||'Tanque')}</td><td data-l="Galones" class="num">${nf0.format(m.gal)}</td><td data-l="Largo" class="num">${nf1.format(m.L)} m${m.largo||m.plano||GEO[m.id]?'':' <span class="sub">(est.)</span>'}</td><td data-l="Proyectos" class="sub">${p.length?p.map(x=>x.id).join(', '):'—'}</td><td data-l="Estado"><span class="bd ${m.activo===false?'n':'ok'}">${m.activo===false?'Inactivo':'Activo'}</span></td><td class="ac"><div style="display:flex;gap:6px;justify-content:flex-end;align-items:center"><button class="ib" data-act="modEd" data-v="${esc(m.id)}" aria-label="Editar modelo">${icon('edit',14)}</button><button class="btn ghost sm" data-act="modAct" data-v="${esc(m.id)}">${m.activo===false?icon('redo',14)+'Activar':icon('flag',14)+'Inactivar'}</button></div></td></tr>`}).join('')}</tbody></table></div></div>`;
+ const h2=h.replace('<b>Modelos y kits se activa más adelante.</b> Por ahora el BOM de cada proyecto lo envía Diseño y se carga en Proyectos. Esta pantalla solo se puede consultar.','<b>Los modelos de tanque se crean aquí</b> (Gerencia y Diseño). Los BOM y kits por modelo se activan más adelante: por ahora el BOM de cada proyecto lo envía Diseño y se carga en Proyectos.');
+ const i=h2.indexOf('<div class="mgrid">');return i<0?card+h2:h2.slice(0,i)+card+h2.slice(i)}}
+
+function modForm(id){const m=id?MOD(id):null;const e=modEst(m?m.gal:12000);
+ modal(mh(m?'Editar modelo '+esc(m.id):'Nuevo modelo de tanque',m?'El identificador no se cambia: es el que guardan los proyectos.':'Queda disponible al crear proyectos. El BOM de cada proyecto se sigue cargando por Excel.')+`<div class="two">
+ <div class="fld"><label for="mdId">Identificador corto</label><input class="inp" id="mdId" maxlength="12" placeholder="Ej.: 12K-SR" value="${m?esc(m.id):''}" ${m?'disabled':''}></div>
+ <div class="fld"><label for="mdTipo">Tipo</label><select class="sel" id="mdTipo">${['Tanque','Semirremolque','Otro'].map(t=>`<option ${(m?m.tipo||'Tanque':'Tanque')===t?'selected':''}>${t}</option>`).join('')}</select></div>
+ <div class="fld" style="grid-column:1/-1"><label for="mdNom">Nombre</label><input class="inp" id="mdNom" maxlength="80" placeholder="Ej.: Semirremolque 12.000 galones" value="${m?esc(m.nom):''}"></div>
+ <div class="fld"><label for="mdGal">Capacidad (galones)</label><input class="inp" id="mdGal" type="number" min="100" max="50000" step="1" placeholder="Ej.: 12000" value="${m?m.gal:''}"></div>
+ <div class="fld"><label for="mdL">Largo total (m) · opcional, para el 3D</label><input class="inp" id="mdL" type="number" min="1" max="30" step="0.01" placeholder="Estimado: ${nf1.format(e.L)} m" value="${m&&m.largo?m.largo:''}"></div>
+ <div class="fld"><label for="mdPl">Plano (opcional)</label><input class="inp" id="mdPl" maxlength="40" placeholder="Ej.: TQ0001012NAL" value="${m?esc(m.plano||''):''}"></div>
+ <div class="fld"><label for="mdNo">Nota (opcional)</label><input class="inp" id="mdNo" maxlength="300" value="${m?esc(m.nota||''):''}"></div></div>
+ <p class="mut3" style="font-size:12.5px;margin-top:10px">Si el largo queda vacío, el 3D se estima por la capacidad. El 3D muestra el tanque, sin el chasis del semirremolque.</p>
+ ${m&&(m.hist||[]).length?`<div class="lb" style="margin:12px 0 6px">Historial</div><div class="sub" style="line-height:1.6">${m.hist.slice().reverse().map(x=>`${esc(x.f)} · ${esc(x.t)} · ${esc(x.u||'')}`).join('<br>')}</div>`:''}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="modGo" data-v="${m?esc(m.id):''}">${icon('check',16)}${m?'Guardar':'Crear modelo'}</button></div>`,'s');
+ if(!m)$('#mdGal').addEventListener('input',ev=>{const g=+ev.target.value;if(g>=100)$('#mdL').placeholder='Estimado: '+nf1.format(modEst(g).L)+' m'})}
+ACT.modNew=(v,el)=>{if(el&&el.disabled)return;modForm('')};
+ACT.modEd=(v,el)=>{if(el&&el.disabled)return;modForm(v)};
+ACT.modGo=async(v,el)=>{const p={nuevo:!v,id:v||$('#mdId').value.trim().toUpperCase(),nombre:$('#mdNom').value.trim(),galones:$('#mdGal').value,tipo:$('#mdTipo').value,largo:$('#mdL').value,plano:$('#mdPl').value.trim(),nota:$('#mdNo').value.trim()};
+ if(!p.id){toast('Escribe el identificador (ej.: 12K-SR).','er');$('#mdId').focus();return}
+ if(p.nombre.length<4){toast('Escribe el nombre del modelo.','er');$('#mdNom').focus();return}
+ if(!(+p.galones>=100)){toast('Escribe la capacidad en galones.','er');$('#mdGal').focus();return}
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_modelo_guardar',{p});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(v?`Modelo ${esc(data.id)} actualizado.`:`Modelo ${esc(data.id)} creado: ya sale en «Nuevo proyecto».`,'ok')})};
+ACT.modAct=async(v,el)=>{if(el&&el.disabled)return;const m=MOD(v);if(!m)return;const act=m.activo===false;
+ await sbAccion(el,act?'Activando…':'Inactivando…',async()=>{const {error}=await SB.rpc('alm_modelo_activo',{p_id:v,p_activo:act});if(error)throw error;
+  await cargarDatos();rerender();toast(act?`Modelo ${esc(v)} activo: sale en «Nuevo proyecto».`:`Modelo ${esc(v)} inactivo: ya no sale en «Nuevo proyecto». Los proyectos que lo tienen no cambian.`,'ok')})};
 
 </script>
 </body>
