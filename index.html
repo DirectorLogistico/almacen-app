@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.14.1 · bloque 6';
+const VERSION='4.15.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4742,7 +4742,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -6956,6 +6956,99 @@ ACT.recBlanco=()=>{if(!REC_ED()){toast('Solo el Auxiliar o Gerencia descargan el
  catch(e){console.error(e);toast('No se pudo descargar el formato: '+esc(e.message||e),'er')}};
 {const _vr=VIEWS.rec;VIEWS.rec=function(){const h=_vr.apply(this,arguments);const k='<button class="btn" data-act="recNew"';if(h.indexOf(k)<0||h.includes('data-act="recBlanco"'))return h;
  return h.replace(k,`<button class="btn ghost" data-act="recBlanco" ${REC_ED()?'':'disabled title="Solo el Auxiliar o Gerencia"'}>${icon('pdf',16)}Formato en blanco (PDF)</button>`+k)}}
+
+/* =====================================================================
+   v4.15.0 · Materiales: corregir código, eliminar, activar e inactivar (SQL 30)
+   - En «Editar material» aparece el campo Código. Solo se puede corregir si el
+     material no tiene ningún uso (kárdex, BOM, OC, solicitudes…) ni existencia.
+   - «Eliminar material» (solo Gerencia) con las mismas condiciones y motivo.
+   - «Inactivar» (Auxiliar o Gerencia): existencia 0, sin OC abiertas, sin
+     solicitudes pendientes y fuera del BOM de proyectos activos. Deja de salir
+     en las listas; el historial se conserva. Botón «Inactivos (n)» en
+     Materiales para verlos y activarlos de nuevo, con el historial MC-.
+   ===================================================================== */
+PERM['Gerencia']=PERM['Gerencia']==='*'?'*':[...new Set([...(PERM['Gerencia']||[]),'mat.del'])];
+Object.assign(ACT_PERM,{matDel:'mat.del',matInact:'mat.new',matAct:'mat.new',matDelGo:'mat.del',matInactGo:'mat.new',matActGo:'mat.new'});
+let MAT_INACT=[],MAT_CAMB=[];
+document.head.insertAdjacentHTML('beforeend','<style>#emCod:disabled{opacity:.72;cursor:not-allowed}</style>');
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(!U.user)return r;
+ try{const {data,error}=await SB.rpc('alm_materiales_inactivos');if(error)throw error;MAT_INACT=data||[]}catch(e){MAT_INACT=[]}
+ try{MAT_CAMB=await leerTodo('alm_materiales_cambios','id,fecha,hora,accion,cod,cod_nuevo,descripcion,motivo,usuario','id')}catch(e){MAT_CAMB=[]}
+ return r}}
+const meMot=(id,ph)=>`<div class="fld" style="margin-top:12px"><label for="${id}">Motivo (obligatorio)</label><input class="inp" id="${id}" maxlength="300" placeholder="${ph}"></div>`;
+function meMotivo(id){const v=(($('#'+id)||{}).value||'').trim();if(v.length<4){toast('Escribe el motivo (mínimo 4 letras).','er');const e=$('#'+id);if(e)e.focus();return null}return v}
+const meStk=m=>Object.values(m.stk||{}).reduce((a,q)=>a+(+q||0),0);
+const meUsoTxt=u=>{const t=[];if(+u.movimientos)t.push(u.movimientos+' movimiento'+(+u.movimientos>1?'s':'')+' en el kárdex');if(+u.existencia)t.push('tiene existencia');
+ (u.referencias||[]).forEach(r=>t.push(String(r.tabla).replace(/^alm_/,'').replace(/_/g,' ')+' ('+r.n+')'));return t.join(' · ')};
+const meOff=(b,tip)=>{if(!b)return;b.disabled=true;b.setAttribute('aria-disabled','true');b.setAttribute('data-tip',tip);b.title=tip};
+
+/* ---------- Ventana «Editar material» ---------- */
+{const _em=editMat;editMat=function(cod){_em.apply(this,arguments);const box=$('#modal .mbox')||$('#modal');if(!box)return;const m=M(cod);
+ box.querySelectorAll('.mh p').forEach(p=>{if(/El código y las existencias/.test(p.textContent))p.textContent='Las existencias solo cambian con movimientos del kárdex. El código se corrige solo si el material no tiene ningún uso.'});
+ const d=$('#emDesc');const f=d&&d.closest('.fld');
+ if(f&&!$('#emCod'))f.insertAdjacentHTML('beforebegin',`<div class="fld"><label for="emCod">Código</label><input class="inp" id="emCod" value="${esc(cod)}" data-orig="${esc(cod)}" maxlength="40" disabled><p class="mut3" id="emCodInfo" style="font-size:12px;margin-top:6px">Revisando si el código ya se usó…</p></div><div style="height:12px"></div>`);
+ const mf=box.querySelector('.mf');if(!mf)return;
+ let del=mf.querySelector('[data-act="delAsk"]');
+ if(del){del.dataset.act='matDel';del.dataset.v=cod}
+ else{mf.insertAdjacentHTML('afterbegin',`<button class="btn ghost dngt" data-act="matDel" data-v="${esc(cod)}">${icon('trash',16)}Eliminar material</button>`);del=mf.querySelector('[data-act="matDel"]')}
+ if(!mf.querySelector('[data-act="matInact"]'))del.insertAdjacentHTML('afterend',`<button class="btn ghost" data-act="matInact" data-v="${esc(cod)}">${icon('flag',16)}Inactivar</button>`);
+ if(!mf.querySelector('.sp'))mf.querySelector('[data-act="matInact"]').insertAdjacentHTML('afterend','<div class="sp"></div>');
+ const ina=mf.querySelector('[data-act="matInact"]');
+ if(meStk(m)>0)meOff(ina,'Tiene existencia ('+qf(meStk(m),m.um)+' '+m.um+'): primero sácala con un ajuste');
+ meOff(del,'Revisando si el material ya se usó…');
+ SB.rpc('alm_material_uso',{p_cod:cod}).then(({data,error})=>{const c=$('#emCod'),i=$('#emCodInfo');if(!c||c.dataset.orig!==cod)return;
+  if(error){if(i)i.textContent='No se pudo revisar el uso del código: '+sbErr(error);return}
+  if(data.libre){if(canReal('mat.new'))c.disabled=false;if(i){i.innerHTML=`${icon('check',14)}<span>Sin movimientos ni usos: puedes corregir el código.</span>`;i.style.cssText+=';display:flex;gap:6px;align-items:center;color:var(--ok,#1a7f4b)'}
+   const b=$('[data-act="matDel"]');if(b&&canReal('mat.del')){b.disabled=false;b.removeAttribute('aria-disabled');b.removeAttribute('data-tip');b.title=''}}
+  else{if(i)i.innerHTML=`Ya tiene historial (${esc(meUsoTxt(data))}): el código no se cambia. Si quedó mal, crea el material con el código correcto e inactiva este.`;
+   meOff($('[data-act="matDel"]'),'Tiene historial: no se elimina. Puedes inactivarlo.')}})}}
+
+/* Guardar: si cambió el código, primero se corrige y luego se guardan los demás datos */
+{const _se=ACT.saveEditMat;ACT.saveEditMat=async(v,el)=>{const c=$('#emCod');const nuevo=c&&!c.disabled?c.value.trim().toUpperCase():'';
+ if(!nuevo||nuevo===v)return _se(v,el);
+ if(!$('#emDesc').value.trim()){toast('La descripción no puede quedar vacía.','er');return}
+ let cod=null;const ok=await sbAccion(el,'Corrigiendo código…',async()=>{const {data,error}=await SB.rpc('alm_material_recodificar',{p_cod:v,p_nuevo:nuevo});if(error)throw error;cod=data.cod;await cargarDatos()});
+ if(!ok||!cod)return;toast(`Código corregido: ${esc(v)} → ${esc(cod)}.`,'ok');return _se(cod,el)}}
+
+/* ---------- Eliminar (solo Gerencia, sin ningún uso) ---------- */
+ACT.matDel=(v,el)=>{if(el&&el.disabled)return;if(!canReal('mat.del')){toast('Solo Gerencia elimina materiales.','wa');return}const m=M(v);
+ modal(mh('Eliminar '+esc(v),'El material no tiene movimientos ni usos. Se borra de la lista de materiales y queda anotado en el historial (MC-). No se puede deshacer: si se necesita, se crea de nuevo.')+
+ `<p class="mut" style="line-height:1.55"><b>${esc(v)}</b> · ${esc(m.desc)}</p>${meMot('meMo','Ej.: se creó con el código errado')}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="matDelGo" data-v="${esc(v)}">${icon('trash',16)}Eliminar</button></div>`,'s')};
+ACT.matDelGo=async(v,el)=>{const mo=meMotivo('meMo');if(!mo)return;
+ await sbAccion(el,'Eliminando…',async()=>{const {data,error}=await SB.rpc('alm_material_eliminar',{p_cod:v,p_motivo:mo});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${esc(v)} eliminado (${esc(data.id)}).`,'ok')})};
+
+/* ---------- Inactivar y activar ---------- */
+ACT.matInact=(v,el)=>{if(el&&el.disabled)return;const m=M(v);
+ modal(mh('Inactivar '+esc(v),'Deja de aparecer en Materiales, solicitudes, órdenes de compra y BOM. El kárdex y los informes lo conservan. Se puede activar de nuevo desde «Inactivos».')+
+ `<p class="mut" style="line-height:1.55"><b>${esc(v)}</b> · ${esc(m.desc)}</p>${meMot('meMo','Ej.: referencia descontinuada, ya no se compra')}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="matInactGo" data-v="${esc(v)}">${icon('flag',16)}Inactivar</button></div>`,'s')};
+ACT.matInactGo=async(v,el)=>{const mo=meMotivo('meMo');if(!mo)return;
+ await sbAccion(el,'Inactivando…',async()=>{const {data,error}=await SB.rpc('alm_material_activo',{p_cod:v,p_activo:false,p_motivo:mo});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${esc(v)} inactivado (${esc(data.id)}). Lo encuentras en «Inactivos».`,'ok')})};
+ACT.matAct=v=>{const x=MAT_INACT.find(m=>m.cod===v)||{desc:''};
+ modal(mh('Activar '+esc(v),'Vuelve a aparecer en Materiales, solicitudes, órdenes de compra y BOM.')+
+ `<p class="mut" style="line-height:1.55"><b>${esc(v)}</b> · ${esc(x.desc)}</p>${meMot('meMo','Ej.: se vuelve a comprar')}
+ <div class="mf"><button class="btn ghost" data-act="matInactivos">Volver</button><button class="btn" data-act="matActGo" data-v="${esc(v)}">${icon('redo',16)}Activar</button></div>`,'s')};
+ACT.matActGo=async(v,el)=>{const mo=meMotivo('meMo');if(!mo)return;
+ await sbAccion(el,'Activando…',async()=>{const {data,error}=await SB.rpc('alm_material_activo',{p_cod:v,p_activo:true,p_motivo:mo});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(`${esc(v)} activo de nuevo (${esc(data.id)}).`,'ok')})};
+
+/* ---------- Ventana «Inactivos» + historial de cambios ---------- */
+const MEB={Inactivar:'wa',Activar:'ok','Corregir código':'n',Eliminar:'er'};
+ACT.matInactivos=()=>{const H=MAT_CAMB.slice().reverse().slice(0,60);
+ modal(mh('Materiales inactivos','No salen en las listas, solicitudes, órdenes de compra ni BOM. Su historial se conserva en el kárdex.')+
+ (MAT_INACT.length?`<div class="tw" style="max-height:320px;overflow:auto"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Familia</th><th>Inactivo desde</th><th>Motivo</th><th></th></tr></thead><tbody>${MAT_INACT.map(m=>`<tr><td class="nm ttl">${esc(m.cod)}</td><td data-l="Descripción">${esc(m.desc)}</td><td data-l="Familia"><span class="fdot" style="--c:${FC[m.fam]||'#888'}"></span>${esc(m.fam)}</td><td data-l="Desde" class="sub">${esc(m.cuando||'—')}</td><td data-l="Motivo" class="sub">${esc(m.motivo||'')}</td><td class="ac"><button class="btn ghost sm" data-act="matAct" data-v="${esc(m.cod)}">${icon('redo',14)}Activar</button></td></tr>`).join('')}</tbody></table></div>`
+  :`<div class="note">${icon('info',16)}<span>No hay materiales inactivos.</span></div>`)+
+ `<div class="lb" style="margin:16px 0 6px">Historial de cambios de materiales</div>`+
+ (H.length?`<div class="tw" style="max-height:260px;overflow:auto"><table class="t"><thead><tr><th>N.º</th><th>Fecha</th><th>Acción</th><th>Código</th><th>Motivo</th><th>Usuario</th></tr></thead><tbody>${H.map(c=>`<tr><td><b>${esc(c.id)}</b></td><td data-l="Fecha" class="sub">${esc(c.fecha)} ${esc(c.hora||'')}</td><td data-l="Acción"><span class="bd ${MEB[c.accion]||'n'}">${esc(c.accion)}</span></td><td data-l="Código">${esc(c.cod)}${c.cod_nuevo?' → <b>'+esc(c.cod_nuevo)+'</b>':''}</td><td data-l="Motivo" class="sub">${esc(c.motivo||'')}</td><td data-l="Usuario" class="sub">${esc(c.usuario||'')}</td></tr>`).join('')}</tbody></table></div>`
+  :`<p class="mut3" style="font-size:12.5px">Todavía no hay cambios.</p>`)+
+ `<div class="mf"><button class="btn ghost" data-act="closeM">Cerrar</button></div>`,'w')};
+
+/* Botón «Inactivos (n)» en la barra de Materiales, junto a Excel y PDF */
+{const _vm=VIEWS.mat;VIEWS.mat=function(){const h=_vm.apply(this,arguments);const b=`<button class="btn ghost" data-act="matInactivos">${icon('inbox',16)}Inactivos (${MAT_INACT.length})</button>`;
+ const i=h.indexOf('<div class="sp"></div>');return i<0?h:h.slice(0,i)+'<div class="sp"></div>'+b+h.slice(i+22)}}
 
 </script>
 </body>
