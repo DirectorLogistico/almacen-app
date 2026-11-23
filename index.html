@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.16.0 · bloque 6';
+const VERSION='4.17.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4742,7 +4742,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios','alm_modelos'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios','alm_modelos','alm_terc_items','alm_terc_movs','alm_terc_despachos','alm_terc_entradas'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -7112,6 +7112,262 @@ ACT.modGo=async(v,el)=>{const p={nuevo:!v,id:v||$('#mdId').value.trim().toUpperC
 ACT.modAct=async(v,el)=>{if(el&&el.disabled)return;const m=MOD(v);if(!m)return;const act=m.activo===false;
  await sbAccion(el,act?'Activando…':'Inactivando…',async()=>{const {error}=await SB.rpc('alm_modelo_activo',{p_id:v,p_activo:act});if(error)throw error;
   await cargarDatos();rerender();toast(act?`Modelo ${esc(v)} activo: sale en «Nuevo proyecto».`:`Modelo ${esc(v)} inactivo: ya no sale en «Nuevo proyecto». Los proyectos que lo tienen no cambian.`,'ok')})};
+
+/* =====================================================================
+   v4.17.0 · Inventario de terceros: MECAMEL (SQL 32)
+   Servicio logístico: Latamks guarda mercancía de MECAMEL y la despacha a
+   GARSITE. NO es inventario de Latamks: tablas propias (alm_terc_*), no suma
+   en materiales, kárdex, costos, tablero ni proyectos. Valores en dólares.
+   - Cargar desde Appolo («Listado de productos»): solo Gerencia.
+   - Entradas y remisiones de despacho (firma de quien entrega = firma
+     registrada en Ajustes; firma de quien recibe = en pantalla): Auxiliar o
+     Gerencia. Ajustes y anular remisiones: solo Gerencia.
+   ===================================================================== */
+let TI=[],TM=[],TD=[],TE=[],TCD=null,TCE=null,TIM={};
+PERM['Auxiliar']=PERM['Auxiliar']==='*'?'*':[...new Set([...(PERM['Auxiliar']||[]),'terc.op'])];
+Object.assign(ACT_PERM,{tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcDesGo:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
+const TC_ED=()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
+const nfU=new Intl.NumberFormat('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
+const usd=v=>'US$ '+nfU.format(+v||0);
+const tq=v=>qf(+v||0);
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.kiosk)return r;
+ try{const [i,m,d,e]=await Promise.all([
+   leerTodo('alm_terc_items','cod,descripcion,um,costo_usd,cantidad,ubicacion,grupo,origen,fecha_appolo,actualizado_en','cod'),
+   leerTodo('alm_terc_movs','id,fecha,hora,tipo,documento,cod,cantidad,saldo,costo_usd,cliente,motivo,ref,usuario','id'),
+   leerTodo('alm_terc_despachos','id,remision,fecha,cliente,lineas,entrega,recibe,observaciones,estado,anulado_motivo,anulado_por,usuario,creado_en','id'),
+   leerTodo('alm_terc_entradas','id,documento,fecha,lineas,observaciones,usuario,creado_en','id')]);
+  TI=(i||[]).map(x=>({...x,cantidad:+x.cantidad,costo_usd:+x.costo_usd}));TM=(m||[]).map(x=>({...x,cantidad:+x.cantidad,saldo:+x.saldo,costo_usd:+x.costo_usd}));
+  TD=(d||[]).sort((a,b)=>b.id.localeCompare(a.id));TE=(e||[]).sort((a,b)=>b.id.localeCompare(a.id));TIM={};TI.forEach(x=>TIM[x.cod]=x)}
+ catch(e){TI=[];TM=[];TD=[];TE=[];TIM={}}   /* sin SQL 32 la pantalla queda vacía */
+ return r}}
+
+/* Menú: grupo propio «Servicios logísticos», antes de «Análisis» */
+(()=>{if(NAV.some(n=>n.id==='terc'))return;const i=NAV.findIndex(n=>n.g==='Análisis');const rr=['Gerencia','Auxiliar','Auditoría','Producción','Calidad','Compras','Diseño','Inventario'];
+ NAV.splice(i<0?NAV.length-1:i,0,{g:'Servicios logísticos'},{id:'terc',t:'Inventario MECAMEL',ic:'truck',r:rr});
+ if(typeof NAVQ_CLAVES!=='undefined')NAVQ_CLAVES.terc='mecamel garsite terceros servicio logistico remision despacho appolo dolares ';})();
+if(typeof CRUMB!=='undefined')try{CRUMB.terc='Servicios logísticos'}catch(e){}
+
+/* ---------- Pantalla ---------- */
+VIEWS.terc=function(){const f=U.f;const tab=f.tcT||'exi';const mes=HOY.slice(0,7);
+ const con=TI.filter(x=>x.cantidad>0);const val=con.reduce((s,x)=>s+x.cantidad*x.costo_usd,0);
+ const dm=TD.filter(d=>d.estado!=='Anulado'&&String(d.fecha).startsWith(mes));const dmV=dm.reduce((s,d)=>s+d.lineas.reduce((a,l)=>a+(+l.q)*(+l.costo_usd||0),0),0);
+ const em=TE.filter(e=>String(e.fecha).startsWith(mes));
+ const top=`<div class="note">${icon('info',16)}<span><b>Inventario de MECAMEL · servicio logístico.</b> Esta mercancía no es de Latamks: no suma en Materiales, Kárdex, costos, Tablero ni proyectos. Valores en dólares, según Appolo. Despachos a GARSITE con remisión firmada.</span></div>
+ <div class="fbar" style="margin-top:12px"><div class="sp"></div>
+  <button class="btn ghost" data-act="tcCarga">${icon('upload',16)}Cargar desde Appolo</button>
+  <button class="btn ghost" data-act="tcEnt">${icon('down',16)}Entrada</button>
+  <button class="btn ghost" data-act="tcAju">${icon('scale',16)}Ajuste</button>
+  <button class="btn" data-act="tcDes">${icon('truck',16)}Nueva remisión de despacho</button></div>
+ <div class="g12 minis wk" style="margin-top:4px"><div class="c3">${kpi('Referencias con saldo',nf0.format(con.length),`${nf0.format(TI.length)} referencias de MECAMEL`,'box')}</div>
+  <div class="c3">${kpi('Valor en bodega',usd(val),`${tq(con.reduce((s,x)=>s+x.cantidad,0))} unidades y metros`,'trend')}</div>
+  <div class="c3">${kpi('Despachos este mes',nf0.format(dm.length),`${usd(dmV)} despachados a GARSITE`,'truck')}</div>
+  <div class="c3">${kpi('Entradas este mes',nf0.format(em.length),TE.length?`última: ${esc(TE[0].id)} · ${fd(TE[0].fecha)}`:'sin entradas registradas','down')}</div></div>
+ <div class="tabs" style="margin:14px 0 12px">${[['exi','Existencias'],['des','Remisiones de despacho'],['ent','Entradas'],['kar','Kárdex MECAMEL']].map(t=>`<button class="${tab===t[0]?'on':''}" data-act="tcTab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div>`;
+ return top+(tab==='des'?tcDesp():tab==='ent'?tcEntr():tab==='kar'?tcKard():tcExis())};
+ACT.tcTab=v=>{U.f.tcT=v;rerender()};
+
+function tcExis(){const f=U.f;const q=nrmH(f.tcQ||'');const solo=f.tcS!=='0';
+ const L=TI.filter(x=>(!solo||x.cantidad>0)&&(!q||nrmH(x.cod+' '+x.descripcion+' '+x.ubicacion).includes(q)));
+ regT('terc','Inventario MECAMEL (servicio logístico)',['Código','Descripción','Unidad','Ubicación','Cantidad','Valor unitario USD','Valor USD','Última carga Appolo'],L.map(x=>[x.cod,x.descripcion,x.um,x.ubicacion,x.cantidad,x.costo_usd,+(x.cantidad*x.costo_usd).toFixed(2),x.fecha_appolo||'']));
+ return`<div class="card"><div class="ch"><div><h3>Existencias de MECAMEL</h3><p>${nf0.format(L.length)} referencias · ${usd(L.reduce((s,x)=>s+x.cantidad*x.costo_usd,0))}</p></div><div class="acts">${xbtns('terc')}</div></div>
+ <div class="fbar"><input class="inp" data-f="tcQ" placeholder="Buscar código, descripción o ubicación" value="${esc(f.tcQ||'')}" style="max-width:360px">
+ <select class="sel" data-f="tcS" style="max-width:200px"><option value="1" ${solo?'selected':''}>Solo con saldo</option><option value="0" ${solo?'':'selected'}>Todas las referencias</option></select></div>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Código</th><th>Descripción</th><th>Ubicación</th><th class="r">Cantidad</th><th class="r">Valor unit.</th><th class="r">Valor USD</th><th></th></tr></thead><tbody>${L.map(x=>`<tr>
+  <td class="nm"><b>${esc(x.cod)}</b></td><td data-l="Descripción">${esc(x.descripcion)}</td><td data-l="Ubicación" class="sub">${esc(x.ubicacion||'—')}</td>
+  <td data-l="Cantidad" class="num"><b>${tq(x.cantidad)}</b> <span class="sub">${esc(x.um.toLowerCase())}</span></td><td data-l="Valor unit." class="num">${usd(x.costo_usd)}</td><td data-l="Valor USD" class="num">${usd(x.cantidad*x.costo_usd)}</td>
+  <td class="ac"><div style="display:flex;gap:6px;justify-content:flex-end"><button class="ib" data-act="tcEd" data-v="${esc(x.cod)}" aria-label="Editar referencia">${icon('edit',14)}</button><button class="btn ghost sm" data-act="tcVerK" data-v="${esc(x.cod)}">Kárdex</button></div></td></tr>`).join('')}</tbody></table></div>`
+ :`<p class="sub">${TI.length?'Ninguna referencia con ese filtro.':'Todavía no hay inventario de MECAMEL. Gerencia lo carga con «Cargar desde Appolo».'}</p>`}</div>`}
+ACT.tcVerK=v=>{U.f.tcT='kar';U.f.tcK=v;rerender()};
+
+function tcDesp(){const L=TD;
+ regT('tcdes','Remisiones de despacho MECAMEL',['Remisión','Fecha','Cliente','#','Código','Descripción','Unidad','Cantidad','Valor USD','Entregó','Recibió','Estado'],
+  L.flatMap(d=>d.lineas.map(l=>[d.remision,d.fecha,d.cliente,l.n,l.cod,l.desc,l.um,+l.q,+((+l.q)*(+l.costo_usd||0)).toFixed(2),(d.entrega||{}).nombre||'',(d.recibe||{}).nombre||'',d.estado])));
+ return`<div class="card"><div class="ch"><div><h3>Remisiones de despacho</h3><p>Cada remisión descuenta del inventario de MECAMEL. Solo Gerencia la anula (la mercancía vuelve con un movimiento nuevo).</p></div><div class="acts">${xbtns('tcdes')}</div></div>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Remisión</th><th>Fecha</th><th>Cliente</th><th>Referencias</th><th>Entregó · Recibió</th><th>Estado</th><th></th></tr></thead><tbody>${L.map(d=>`<tr${d.estado==='Anulado'?' style="opacity:.65"':''}>
+  <td class="nm"><b>${esc(d.remision)}</b><div class="sub">${esc(d.id)}</div></td><td data-l="Fecha">${fd(d.fecha)}</td><td data-l="Cliente">${esc(d.cliente)}</td>
+  <td data-l="Referencias">${d.lineas.length} · ${tq(d.lineas.reduce((s,l)=>s+(+l.q),0))} und<div class="sub">${usd(d.lineas.reduce((s,l)=>s+(+l.q)*(+l.costo_usd||0),0))}</div></td>
+  <td data-l="Firmas" class="sub">${esc((d.entrega||{}).nombre||'')}<br>${esc((d.recibe||{}).nombre||'')}</td>
+  <td data-l="Estado">${d.estado==='Anulado'?`<span class="bd">Anulado</span><div class="sub">${esc(d.anulado_motivo)}</div>`:'<span class="bd ok">Despachado</span>'}</td>
+  <td><div class="acts" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn ghost sm" data-act="tcPdf" data-v="${esc(d.id)}">${icon('pdf',14)}PDF</button>${d.estado!=='Anulado'?`<button class="ib" data-act="tcAnu" data-v="${esc(d.id)}" data-tip="Anular remisión">${icon('trash',15)}</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`
+ :`<p class="sub">Todavía no hay remisiones. Toca «Nueva remisión de despacho» cuando salga mercancía para GARSITE.</p>`}</div>`}
+
+function tcEntr(){const L=TE;
+ regT('tcent','Entradas de mercancía MECAMEL',['Entrada','Documento','Fecha','Código','Descripción','Unidad','Cantidad','Valor USD','Registró'],L.flatMap(e=>e.lineas.map(l=>[e.id,e.documento,e.fecha,l.cod,l.desc,l.um,+l.q,+((+l.q)*(+l.costo_usd||0)).toFixed(2),e.usuario])));
+ return`<div class="card"><div class="ch"><div><h3>Entradas</h3><p>Mercancía de MECAMEL que llega a la bodega después de la carga de Appolo.</p></div><div class="acts">${xbtns('tcent')}</div></div>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Entrada</th><th>Documento</th><th>Fecha</th><th>Referencias</th><th>Registró</th></tr></thead><tbody>${L.map(e=>`<tr><td class="nm"><b>${esc(e.id)}</b></td><td data-l="Documento">${esc(e.documento)}</td><td data-l="Fecha">${fd(e.fecha)}</td><td data-l="Referencias">${e.lineas.map(l=>`${esc(l.cod)} · ${tq(l.q)}`).join('<br>')}</td><td data-l="Registró" class="sub">${esc(e.usuario)}</td></tr>`).join('')}</tbody></table></div>`
+ :`<p class="sub">Todavía no hay entradas.</p>`}</div>`}
+
+function tcKard(){const f=U.f;const q=nrmH(f.tcK||'');const L=TM.filter(m=>(!f.tcKt||m.tipo===f.tcKt)&&(!q||nrmH(m.cod+' '+m.documento+' '+((TIM[m.cod]||{}).descripcion||'')).includes(q))).slice().reverse();
+ regT('tckar','Kárdex MECAMEL',['Fecha','Hora','Tipo','Documento','Código','Descripción','Cantidad','Saldo','Valor unit. USD','Cliente','Motivo','Usuario'],L.map(m=>[m.fecha,m.hora,m.tipo,m.documento,m.cod,(TIM[m.cod]||{}).descripcion||'',m.cantidad,m.saldo,m.costo_usd,m.cliente,m.motivo,m.usuario]));
+ return`<div class="card"><div class="ch"><div><h3>Kárdex de MECAMEL</h3><p>Cada movimiento queda fijo: las correcciones son movimientos nuevos. Separado del kárdex de Latamks.</p></div><div class="acts">${xbtns('tckar')}</div></div>
+ <div class="fbar"><input class="inp" data-f="tcK" placeholder="Buscar código, documento o descripción" value="${esc(f.tcK||'')}" style="max-width:360px">
+ <select class="sel" data-f="tcKt" style="max-width:200px"><option value="">Todos los tipos</option>${['Carga Appolo','Entrada','Despacho','Ajuste','Anulación'].map(t=>`<option ${f.tcKt===t?'selected':''}>${t}</option>`).join('')}</select></div>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Fecha</th><th>Tipo</th><th>Documento</th><th>Código</th><th class="r">Cantidad</th><th class="r">Saldo</th><th>Usuario</th></tr></thead><tbody>${L.slice(0,400).map(m=>`<tr><td class="nm">${fd(m.fecha)} <span class="sub">${esc(m.hora)}</span></td><td data-l="Tipo"><span class="bd ${m.cantidad<0?'wa':'ok'}">${esc(m.tipo)}</span></td><td data-l="Documento">${esc(m.documento)}${m.motivo?`<div class="sub">${esc(m.motivo)}</div>`:''}</td><td data-l="Código"><b>${esc(m.cod)}</b><div class="sub">${esc((TIM[m.cod]||{}).descripcion||'')}</div></td><td data-l="Cantidad" class="num">${m.cantidad>0?'+':''}${tq(m.cantidad)}</td><td data-l="Saldo" class="num">${tq(m.saldo)}</td><td data-l="Usuario" class="sub">${esc(m.usuario)}</td></tr>`).join('')}</tbody></table></div>${L.length>400?`<p class="sub" style="margin-top:8px">Se muestran los 400 más recientes de ${nf0.format(L.length)}. El Excel trae todos.</p>`:''}`
+ :`<p class="sub">Sin movimientos con ese filtro.</p>`}</div>`}
+
+/* ---------- Cargar desde Appolo ---------- */
+const tcFecha=v=>{if(v==null||v==='')return'';if(typeof v==='number'&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*864e5));return d.toISOString().slice(0,10)}
+ if(v instanceof Date)return v.toISOString().slice(0,10);const s=String(v).trim();let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[0];m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);return m?`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:''};
+IMPF.mec={
+ parse(rows){const h=hdr(rows,['CODIGO','SALDO']);if(!h)return{ok:false,err:'No encontré las columnas «Codigo» y «Saldo Disponible». Usa el «Listado de productos» de Appolo tal como sale.'};
+  const cc=h.col('CODIGO'),cn=h.col('NOMBRE')>=0?h.col('NOMBRE'):h.col('DESCRIP'),cg=h.col('GRUPO'),cu=h.col('UNIDAD'),co=h.col('ORIGEN'),cv=h.col('VALOR'),cs=h.col('SALDO'),cf=h.col('FECHA'),cb=h.col('UBICA');
+  if(cn<0)return{ok:false,err:'No encontré la columna «Nombre» (descripción).'};
+  const L=[],E=[],vistos={};
+  rows.slice(h.i+1).forEach((r,k)=>{const cod=String(r[cc]==null?'':r[cc]).trim().toUpperCase();if(!cod)return;const fila=h.i+k+2;
+   const q=numv(r[cs]),v=cv>=0&&r[cv]!=null&&r[cv]!==''?numv(r[cv]):0,desc=String(r[cn]||'').trim();
+   if(!desc){E.push('Fila '+fila+': '+cod+' sin nombre');return}
+   if(isNaN(q)||q<0){E.push('Fila '+fila+': '+cod+' sin saldo válido');return}
+   if(isNaN(v)||v<0){E.push('Fila '+fila+': '+cod+' con valor unitario no válido');return}
+   if(vistos[cod]){E.push('Fila '+fila+': '+cod+' está repetido');return}vistos[cod]=1;
+   L.push({cod,desc,q,costo:v,um:cu>=0?String(r[cu]||'').trim():'',grupo:cg>=0?String(r[cg]||'').trim():'',origen:co>=0?String(r[co]||'').trim():'',fecha:cf>=0?tcFecha(r[cf]):'',ub:cb>=0?String(r[cb]||'').trim():''})});
+  return{ok:L.length>0&&!E.length,L,E}},
+ prev(d){if(d.err)return errBox(d.err,[]);if(d.E.length)return errBox('Hay '+d.E.length+' filas con error. Corrígelas en el Excel y vuelve a elegir el archivo:',d.E);
+  const nue=d.L.filter(l=>!TIM[l.cod]),dif=d.L.filter(l=>TIM[l.cod]&&Math.abs(TIM[l.cod].cantidad-l.q)>1e-9),val=d.L.reduce((s,l)=>s+l.q*l.costo,0);
+  return`<div class="note wa" style="margin-bottom:10px">${icon('warn',16)}<span><b>La cantidad de cada referencia queda igual al «Saldo disponible» de Appolo.</b> Si ya hiciste despachos o entradas en la app que Appolo todavía no tiene, esta carga los deshace. Úsala para la carga inicial o cuando Appolo esté al día.</span></div>
+  <div class="kv"><span>Filas</span><b>${nf0.format(d.L.length)}</b><span>Referencias nuevas</span><b>${nf0.format(nue.length)}</b><span>Con saldo</span><b>${nf0.format(d.L.filter(l=>l.q>0).length)}</b><span>Valor total</span><b>${usd(val)}</b><span>Cambian de cantidad</span><b>${nf0.format(dif.length+nue.filter(l=>l.q>0).length)}</b></div>
+  ${dif.length?`<div class="lb" style="margin:12px 0 6px">Diferencias con la app (app → Appolo)</div><div class="tw" style="max-height:220px;overflow:auto"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th class="r">App</th><th class="r">Appolo</th></tr></thead><tbody>${dif.slice(0,100).map(l=>`<tr><td><b>${esc(l.cod)}</b></td><td>${esc(l.desc)}</td><td class="num">${tq(TIM[l.cod].cantidad)}</td><td class="num">${tq(l.q)}</td></tr>`).join('')}</tbody></table></div>`:''}`},
+ apply(){return'Solo en la app real.'},
+ async applyDb(d,archivo){const {data,error}=await SB.rpc('alm_terc_cargar',{p_filas:d.L,p_archivo:archivo||''});if(error)throw error;
+  return`Inventario MECAMEL cargado (${data.documento}): ${data.filas} filas, ${data.nuevos} nuevas, ${data.movimientos} movimientos.`}};
+if(typeof TPL!=='undefined')TPL.mec={n:'Plantilla_MECAMEL_Appolo',cols:['Nombre','Codigo','Grupo','Unidad Manejo','Origen','Valor Unitario','Saldo Disponible','Fecha Ultimo Mov.','Ubicacion'],ej:['DESCRIPCION DEL PRODUCTO','CODIGO-EJEMPLO','Servicio','UNIDAD','Extranjero',1.5,10,'2026-11-01','Estante A-1']};
+ACT.tcCarga=(v,el)=>{if(el&&el.disabled)return;impModal('mec','Cargar inventario de MECAMEL desde Appolo','Exporta de Appolo el «Listado de productos» (columnas Nombre, Codigo, Unidad Manejo, Valor Unitario, Saldo Disponible) y elígelo aquí. Verás la vista previa antes de cargar.')};
+
+/* ---------- Editar referencia ---------- */
+ACT.tcEd=(v,el)=>{if(el&&el.disabled)return;const x=TIM[v];if(!x)return;const g=U.user.rol==='Gerencia';
+ modal(mh('Editar '+esc(v),'La cantidad no se cambia aquí: solo con entradas, remisiones o ajustes.')+`<div class="two">
+ <div class="fld" style="grid-column:1/-1"><label for="teD">Descripción</label><input class="inp" id="teD" maxlength="200" value="${esc(x.descripcion)}"></div>
+ <div class="fld"><label for="teU">Ubicación en bodega</label><input class="inp" id="teU" maxlength="60" placeholder="Ej.: Estante A-3" value="${esc(x.ubicacion)}"></div>
+ <div class="fld"><label for="teM">Unidad</label><input class="inp" id="teM" maxlength="20" value="${esc(x.um)}"></div>
+ <div class="fld"><label for="teC">Valor unitario (USD)${g?'':' · solo Gerencia'}</label><input class="inp" id="teC" type="number" min="0" step="any" value="${x.costo_usd}" ${g?'':'disabled'}></div>
+ <div class="fld"><label>Existencia</label><input class="inp" value="${tq(x.cantidad)}" disabled></div></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcEdGo" data-v="${esc(v)}">Guardar</button></div>`,'s')};
+ACT.tcEdGo=async(v,el)=>{const p={cod:v,desc:$('#teD').value.trim(),ub:$('#teU').value.trim(),um:$('#teM').value.trim()};if(!$('#teC').disabled)p.costo=$('#teC').value;
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_terc_item_guardar',{p});if(error)throw error;await cargarDatos();closeModal();rerender();toast(esc(v)+' actualizado.','ok')})};
+
+/* ---------- Ajuste (solo Gerencia) ---------- */
+ACT.tcAju=(v,el)=>{if(el&&el.disabled)return;
+ modal(mh('Ajuste de inventario MECAMEL','Solo Gerencia. Queda en el kárdex de MECAMEL con el motivo; no se edita ni se borra.')+`<datalist id="tcCods">${TI.map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(x.cantidad)}</option>`).join('')}</datalist>
+ <div class="two"><div class="fld"><label for="taT">Tipo de ajuste</label><select class="sel" id="taT"><option value="+">Suma (+) · hay más de lo registrado</option><option value="-">Resta (−) · hay menos de lo registrado</option></select></div><div class="fld"><label for="taC">Código</label><input class="inp" id="taC" list="tcCods" placeholder="Escribe el código"></div>
+ <div class="fld"><label for="taQ">Cantidad</label><input class="inp" id="taQ" type="number" min="0" step="any" inputmode="decimal"></div>
+ <div class="fld"><label for="taM">Motivo</label><input class="inp" id="taM" maxlength="300" placeholder="Ej.: conteo físico con MECAMEL"></div></div><p class="sub" id="taI" style="margin-top:6px"></p>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcAjuGo">Registrar ajuste</button></div>`,'s');
+ $('#taC').addEventListener('input',()=>{const x=TIM[$('#taC').value.trim().toUpperCase()];$('#taI').textContent=x?`${x.descripcion} · existencia ${tq(x.cantidad)} ${x.um.toLowerCase()}`:''})};
+ACT.tcAjuGo=async(v,el)=>{const p={tipo:$('#taT').value,cod:$('#taC').value.trim().toUpperCase(),q:numIn($('#taQ').value),motivo:$('#taM').value.trim()};
+ if(!TIM[p.cod]){toast('Escribe un código del inventario de MECAMEL.','er');return}if(!(p.q>0)){toast('Escribe la cantidad.','er');return}if(p.motivo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_terc_ajuste',{p});if(error)throw error;await cargarDatos();closeModal();rerender();toast(`Ajuste registrado: ${esc(p.cod)} queda en ${tq(data.saldo)}.`,'ok')})};
+
+/* ---------- Entrada ---------- */
+ACT.tcEnt=(v,el)=>{if(el&&el.disabled)return;TCE={doc:'',fecha:HOY,obs:'',lineas:[{cod:'',q:'',desc:'',um:'UNIDAD',costo:''}]};tcEntForm()};
+function tcEntLeer(){if(!TCE)return;TCE.doc=$('#tnD').value;TCE.fecha=$('#tnF').value;TCE.obs=$('#tnO').value;
+ document.querySelectorAll('[data-tn]').forEach(e=>{const [i,k]=e.dataset.tn.split('|');TCE.lineas[+i][k]=e.value})}
+function tcEntForm(){const L=TCE.lineas;
+ modal(mh('Entrada de mercancía MECAMEL','Suma al inventario de MECAMEL. Si la referencia es nueva, escribe su descripción, unidad y valor en dólares.')+`<datalist id="tcCods">${TI.map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)}</option>`).join('')}</datalist>
+ <div class="two"><div class="fld"><label for="tnD">Documento de ingreso</label><input class="inp" id="tnD" maxlength="60" placeholder="Ej.: FMM 12345 o remisión de MECAMEL" value="${esc(TCE.doc)}"></div>
+ <div class="fld"><label for="tnF">Fecha</label><input class="inp" id="tnF" type="date" max="${HOY}" value="${esc(TCE.fecha)}"></div></div>
+ <div class="lb" style="margin:12px 0 6px">Referencias</div>
+ ${L.map((l,i)=>`<div class="tcl"><span class="recn">${i+1}</span><input class="inp" data-tn="${i}|cod" list="tcCods" placeholder="Código" value="${esc(l.cod)}"><input class="inp" data-tn="${i}|q" type="number" min="0" step="any" inputmode="decimal" placeholder="Cantidad" value="${esc(l.q)}"><button class="ib" data-act="tcEnDel" data-v="${i}" aria-label="Quitar línea">${icon('trash',14)}</button><div class="tcx" id="tnx${i}">${tcEntInfo(i)}</div></div>`).join('')}
+ <button class="btn ghost sm" data-act="tcEnAdd">${icon('plus',14)}Agregar referencia</button>
+ <div class="fld" style="margin-top:12px"><label for="tnO">Observaciones</label><input class="inp" id="tnO" maxlength="300" value="${esc(TCE.obs)}"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcEntGo">${icon('check',16)}Registrar entrada</button></div>`,'w');
+ document.querySelectorAll('[data-tn$="|cod"]').forEach(e=>e.addEventListener('input',()=>{const i=e.dataset.tn.split('|')[0];tcEntLeer();const z=$('#tnx'+i);if(z)z.innerHTML=tcEntInfo(+i)}))}
+function tcEntInfo(i){const l=TCE.lineas[i];const x=TIM[String(l.cod).trim().toUpperCase()];
+ return x?`<span class="sub">${esc(x.descripcion)} · existencia ${tq(x.cantidad)}</span>`:String(l.cod).trim()?`<div class="tcn"><input class="inp" data-tn="${i}|desc" placeholder="Descripción (referencia nueva)" value="${esc(l.desc)}"><input class="inp" data-tn="${i}|um" placeholder="Unidad" value="${esc(l.um)}"><input class="inp" data-tn="${i}|costo" type="number" min="0" step="any" placeholder="Valor unit. USD" value="${esc(l.costo)}"></div>`:''}
+ACT.tcEnAdd=()=>{tcEntLeer();TCE.lineas.push({cod:'',q:'',desc:'',um:'UNIDAD',costo:''});tcEntForm()};
+ACT.tcEnDel=v=>{tcEntLeer();TCE.lineas.splice(+v,1);if(!TCE.lineas.length)TCE.lineas.push({cod:'',q:'',desc:'',um:'UNIDAD',costo:''});tcEntForm()};
+ACT.tcEntGo=async(v,el)=>{tcEntLeer();const L=TCE.lineas.filter(l=>String(l.cod).trim()).map(l=>({cod:String(l.cod).trim().toUpperCase(),q:numIn(l.q),desc:l.desc,um:l.um,costo:l.costo}));
+ if(TCE.doc.trim().length<2){toast('Escribe el documento de ingreso.','er');return}if(!L.length){toast('Agrega al menos una referencia.','er');return}
+ if(L.some(l=>!(l.q>0))){toast('Cada referencia necesita una cantidad mayor que 0.','er');return}
+ if(!TCE.tok)TCE.tok='te'+Date.now()+Math.random().toString(36).slice(2,8);
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_terc_entrada',{p:{documento:TCE.doc.trim(),fecha:TCE.fecha,obs:TCE.obs,lineas:L,tok:TCE.tok}});if(error)throw error;
+  TCE=null;await cargarDatos();closeModal();U.f.tcT='ent';rerender();toast(`Entrada ${esc(data.id)} registrada.`,'ok')})};
+
+/* ---------- Remisión de despacho ---------- */
+const tcSigRem=()=>{const n=TD.map(d=>(/^RM-(\d+)$/.exec(d.remision)||[])[1]).filter(Boolean).map(Number);return'RM-'+String((n.length?Math.max(...n):0)+1).padStart(4,'0')};
+ACT.tcDes=(v,el)=>{if(el&&el.disabled)return;TCD={rem:'',fecha:HOY,cli:'GARSITE',obs:'',lineas:[{cod:'',q:''}],rn:'',rc:'',img:'',trazos:0};tcDesForm()};
+function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;TCD.obs=$('#tdO').value;TCD.rn=$('#tdRn').value;TCD.rc=$('#tdRc').value;
+ document.querySelectorAll('[data-td]').forEach(e=>{const [i,k]=e.dataset.td.split('|');TCD.lineas[+i][k]=e.value})}
+function tcDesForm(){const L=TCD.lineas;const mia=(S.firmas||{})[U.user.email];
+ modal(mh('Nueva remisión de despacho','Mercancía de MECAMEL que sale para el cliente. Descuenta del inventario de MECAMEL.')+`<datalist id="tcCods">${TI.filter(x=>x.cantidad>0).map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(x.cantidad)}</option>`).join('')}</datalist>
+ <div class="two"><div class="fld"><label for="tdR">N.º de remisión</label><input class="inp" id="tdR" maxlength="30" placeholder="Automática: ${tcSigRem()}" value="${esc(TCD.rem)}"></div>
+ <div class="fld"><label for="tdF">Fecha</label><input class="inp" id="tdF" type="date" max="${HOY}" value="${esc(TCD.fecha)}"></div>
+ <div class="fld" style="grid-column:1/-1"><label for="tdC">Cliente</label><input class="inp" id="tdC" maxlength="60" value="${esc(TCD.cli)}"></div></div>
+ <div class="lb" style="margin:12px 0 6px">Referencias que salen</div>
+ ${L.map((l,i)=>`<div class="tcl"><span class="recn">${i+1}</span><input class="inp" data-td="${i}|cod" list="tcCods" placeholder="Código" value="${esc(l.cod)}"><input class="inp" data-td="${i}|q" type="number" min="0" step="any" inputmode="decimal" placeholder="Cantidad" value="${esc(l.q)}"><button class="ib" data-act="tcDeDel" data-v="${i}" aria-label="Quitar línea">${icon('trash',14)}</button><div class="tcx" id="tdx${i}">${tcDesInfo(i)}</div></div>`).join('')}
+ <button class="btn ghost sm" data-act="tcDeAdd">${icon('plus',14)}Agregar referencia</button>
+ <div class="fld" style="margin-top:12px"><label for="tdO">Observaciones</label><input class="inp" id="tdO" maxlength="300" value="${esc(TCD.obs)}"></div>
+ <div class="two" style="margin-top:12px">
+  <div class="tcfir"><div class="lb">Entrega (Latamks)</div>${mia?`<img src="${mia.img}" alt="Firma de quien entrega"><div><b>${esc(mia.nombre||U.user.nombre)}</b><div class="sub">${esc(mia.cargo||'')}</div></div>`
+   :`<div class="note wa">${icon('warn',16)}<span>Necesitas tu firma registrada. <button class="btn link sm" data-act="firmaPad">Registrar mi firma</button></span></div>`}</div>
+  <div class="tcfir"><div class="lb">Recibe (cliente)</div><input class="inp" id="tdRn" maxlength="80" placeholder="Nombre de quien recibe" value="${esc(TCD.rn)}"><input class="inp" id="tdRc" maxlength="80" placeholder="Cargo o cédula (opcional)" value="${esc(TCD.rc)}" style="margin-top:6px">
+   <div class="tcpad"><canvas id="tcPad" width="600" height="200" aria-label="Firma de quien recibe"></canvas><span id="tcPadH">Firma aquí con el dedo o el mouse</span></div><button class="btn link sm" data-act="tcPadDel">Borrar firma</button></div></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcDesGo">${icon('truck',16)}Despachar y generar remisión</button></div>`,'w');
+ document.querySelectorAll('[data-td$="|cod"],[data-td$="|q"]').forEach(e=>e.addEventListener('input',()=>{const i=e.dataset.td.split('|')[0];tcDesLeer();const z=$('#tdx'+i);if(z)z.innerHTML=tcDesInfo(+i)}));tcPad()}
+function tcDesInfo(i){const l=TCD.lineas[i];const c=String(l.cod).trim().toUpperCase();const x=TIM[c];const mal=x&&+numIn(l.q)>x.cantidad;
+ return x?`<span class="sub"${mal?' style="color:var(--er,#c0392b)"':''}>${esc(x.descripcion)} · hay ${tq(x.cantidad)} ${esc(x.um.toLowerCase())}${mal?' · no alcanza':''}</span>`:c?`<span class="sub" style="color:var(--er,#c0392b)">Ese código no está en el inventario de MECAMEL</span>`:''}
+function tcPad(){const c=$('#tcPad');if(!c)return;const x=c.getContext('2d');x.lineWidth=3.2;x.lineCap='round';x.lineJoin='round';x.strokeStyle='#14213d';
+ if(TCD.img){const im=new Image();im.onload=()=>x.drawImage(im,0,0,c.width,c.height);im.src=TCD.img;$('#tcPadH').style.display='none'}
+ let dib=false,lx=0,ly=0;const pos=e=>{const b=c.getBoundingClientRect();return[(e.clientX-b.left)*c.width/b.width,(e.clientY-b.top)*c.height/b.height]};
+ c.addEventListener('pointerdown',e=>{dib=true;[lx,ly]=pos(e);c.setPointerCapture(e.pointerId);$('#tcPadH').style.display='none';e.preventDefault()});
+ c.addEventListener('pointermove',e=>{if(!dib)return;const [nx,ny]=pos(e);x.beginPath();x.moveTo(lx,ly);x.lineTo(nx,ny);x.stroke();lx=nx;ly=ny;e.preventDefault()});
+ const fin=()=>{if(!dib)return;dib=false;TCD.trazos++;TCD.img=c.toDataURL('image/png')};c.addEventListener('pointerup',fin);c.addEventListener('pointercancel',fin)}
+ACT.tcPadDel=()=>{tcDesLeer();TCD.img='';TCD.trazos=0;tcDesForm()};
+ACT.tcDeAdd=()=>{tcDesLeer();TCD.lineas.push({cod:'',q:''});tcDesForm()};
+ACT.tcDeDel=v=>{tcDesLeer();TCD.lineas.splice(+v,1);if(!TCD.lineas.length)TCD.lineas.push({cod:'',q:''});tcDesForm()};
+ACT.tcDesGo=async(v,el)=>{tcDesLeer();const L=TCD.lineas.filter(l=>String(l.cod).trim()).map(l=>({cod:String(l.cod).trim().toUpperCase(),q:numIn(l.q)}));
+ if(!L.length){toast('Agrega al menos una referencia.','er');return}
+ const no=L.find(l=>!TIM[l.cod]);if(no){toast(esc(no.cod)+' no está en el inventario de MECAMEL.','er');return}
+ if(L.some(l=>!(l.q>0))){toast('Cada referencia necesita una cantidad mayor que 0.','er');return}
+ const pas=L.find(l=>l.q>TIM[l.cod].cantidad);if(pas){toast(`No alcanza ${esc(pas.cod)}: hay ${tq(TIM[pas.cod].cantidad)}.`,'er');return}
+ if(!(S.firmas||{})[U.user.email]){toast('Primero registra tu firma (Ajustes › Mi firma).','er');return}
+ if(TCD.rn.trim().length<3){toast('Escribe el nombre de quien recibe.','er');$('#tdRn').focus();return}
+ if(!TCD.img||TCD.trazos<1){toast('Falta la firma de quien recibe.','er');return}
+ if(!TCD.tok)TCD.tok='td'+Date.now()+Math.random().toString(36).slice(2,8);
+ await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,tok:TCD.tok,recibe:{nombre:TCD.rn.trim(),cargo:TCD.rc.trim(),img:TCD.img}}});if(error)throw error;
+  TCD=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} despachada.`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)})};
+
+/* ---------- Anular remisión (solo Gerencia) ---------- */
+ACT.tcAnu=(v,el)=>{if(el&&el.disabled)return;const d=TD.find(x=>x.id===v);if(!d)return;
+ modal(mh('Anular remisión '+esc(d.remision),'La mercancía vuelve al inventario de MECAMEL con un movimiento «Anulación». La remisión queda en la lista como anulada; no se borra.')+`<div class="fld"><label for="tuM">Motivo</label><input class="inp" id="tuM" maxlength="300" placeholder="Ej.: el cliente no recibió la mercancía"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="tcAnuGo" data-v="${esc(v)}">Anular</button></div>`,'s')};
+ACT.tcAnuGo=async(v,el)=>{const m=$('#tuM').value.trim();if(m.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_terc_despacho_anular',{p_id:v,p_motivo:m});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Remisión anulada; la mercancía volvió al inventario de MECAMEL.','ok')})};
+
+/* ---------- PDF de la remisión ---------- */
+function tcPdfDoc(r){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),X=12,AW=W-24;
+ const azul=[36,52,107],gris=[90,100,130];let y=12;
+ d.setDrawColor(...azul);d.setLineWidth(.4);d.rect(X,y,AW,24);let tx=X+3;
+ if(S.cfg&&S.cfg.logo){try{const f=/image\/png/.test(S.cfg.logo)?'PNG':'JPEG';d.addImage(S.cfg.logo,f,X+2,y+3,30,18,undefined,'FAST');tx=X+35}catch(e){}}
+ const cx=tx+(W-X-52-tx)/2;d.line(W-X-52,y,W-X-52,y+24);d.setTextColor(20);d.setFont('helvetica','bold');d.setFontSize(12);d.text('REMISIÓN DE DESPACHO',cx,y+8,{align:'center'});
+ d.setFont('helvetica','normal');d.setFontSize(8.5);d.text('Servicio logístico de almacenamiento y despacho',cx,y+13.5,{align:'center'});
+ d.setFontSize(7.5);d.setTextColor(...gris);d.text('LATAMKS S.A.S. · Zona Franca La Cayena, Barranquilla',cx,y+18.5,{align:'center'});
+ d.setTextColor(20);d.setFontSize(8);[['Remisión N.º:',r.remision],['Fecha:',String(r.fecha).split('-').reverse().join('/')],['Cliente:',r.cliente],['Propietario:','MECAMEL']].forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-50,y+5.5+i*5);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-27,y+5.5+i*5)});
+ y+=29;if(r.estado==='Anulado'){d.setFontSize(9);d.setTextColor(180,30,30);d.setFont('helvetica','bold');d.text('ANULADA · '+(r.anulado_motivo||''),X,y);d.setFont('helvetica','normal');d.setTextColor(20);y+=5}
+ d.setFontSize(8);d.setTextColor(...gris);d.text('La mercancía es propiedad de MECAMEL. Latamks presta el servicio de almacenamiento y despacho.',X,y);y+=4;d.setTextColor(20);
+ d.autoTable({startY:y,margin:{left:X,right:X},head:[['# Ítem','Código','Descripción','Unidad','Cantidad']],body:r.lineas.map(l=>[l.n,l.cod,l.desc,String(l.um||'').toLowerCase(),tq(l.q)]),theme:'grid',
+  styles:{fontSize:8,cellPadding:1.8,lineColor:[180,186,200],lineWidth:.15,textColor:20,valign:'middle'},headStyles:{fillColor:azul,textColor:255,fontStyle:'bold'},columnStyles:{0:{cellWidth:14,halign:'center'},1:{cellWidth:38},3:{cellWidth:18},4:{cellWidth:22,halign:'right'}}});
+ y=d.lastAutoTable.finalY+5;
+ if(r.observaciones){d.setFont('helvetica','bold');d.text('Observaciones:',X,y);d.setFont('helvetica','normal');const ob=d.splitTextToSize(r.observaciones,AW-28);d.text(ob,X+26,y);y+=ob.length*4+3}
+ if(y>H-60){d.addPage();y=16}
+ const fil=[['Entrega (Latamks)',r.entrega||{}],['Recibe ('+r.cliente+')',r.recibe||{}]];
+ d.autoTable({startY:y,margin:{left:X,right:X},head:[['','Nombre','Cargo','Firma']],body:fil.map(([t,f])=>[t,f.nombre||'',f.cargo||'','']),theme:'grid',
+  styles:{fontSize:8,cellPadding:2,minCellHeight:22,valign:'middle',lineColor:[180,186,200],lineWidth:.15,textColor:20},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold',minCellHeight:7},columnStyles:{0:{fontStyle:'bold',cellWidth:36},3:{cellWidth:62}},
+  didDrawCell:c=>{if(c.section==='body'&&c.column.index===3){const f=fil[c.row.index][1].img;if(f)try{d.addImage(f,'PNG',c.cell.x+1.5,c.cell.y+1.5,c.cell.width-3,c.cell.height-3,undefined,'FAST')}catch(e){}}}});
+ const n=d.internal.getNumberOfPages();for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(...gris);d.text('Remisión '+r.remision+' · '+r.id+' · Página '+i+' de '+n,W-X,H-7,{align:'right'});d.text('Latamks Almacén · Servicio logístico MECAMEL',X,H-7)}
+ return d}
+ACT.tcPdf=v=>{const r=TD.find(x=>x.id===v);if(!r)return;try{const d=tcPdfDoc(r);const nom='Remision_'+r.remision+'_'+String(r.cliente).replace(/[^A-Za-z0-9]+/g,'_')+'_'+r.fecha+'.pdf';
+ const u=d.output('bloburl');const w=window.open(u,'_blank');if(!w)saveFile(nom,d.output('blob'))}catch(e){console.error(e);toast('No se pudo generar el PDF: '+esc(e.message||e),'er')}};
+
+/* Estilos del módulo */
+document.head.insertAdjacentHTML('beforeend',`<style>
+.tcl{display:grid;grid-template-columns:28px 1fr 140px 36px;gap:8px;align-items:center;margin-bottom:8px}
+.tcl .tcx{grid-column:2/-1;margin-top:-4px}.tcl .tcx:empty{display:none}.tcl .tcn{display:grid;grid-template-columns:1fr 110px 140px;gap:8px}
+.tcfir{border:1px solid var(--line,#e3e7ef);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.tcfir img{max-height:80px;max-width:100%;object-fit:contain;align-self:flex-start}
+.tcpad{position:relative;margin-top:6px;border:1.5px dashed var(--line,#cfd6e4);border-radius:12px;background:#fff}
+.tcpad canvas{width:100%;height:130px;display:block;touch-action:none;border-radius:12px}
+.tcpad span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa3b5;font-size:13px;pointer-events:none}
+@media(max-width:640px){.tcl{grid-template-columns:24px 1fr 90px 32px}.tcl .tcn{grid-template-columns:1fr}}
+</style>`);
 
 </script>
 </body>
