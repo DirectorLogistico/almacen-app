@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.17.2 · bloque 6';
+const VERSION='4.18.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7383,6 +7383,102 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .tcpad span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa3b5;font-size:13px;pointer-events:none}
 @media(max-width:640px){.tcl{grid-template-columns:24px 1fr 90px 32px}.tcl .tcn{grid-template-columns:1fr}}
 </style>`);
+
+/* =====================================================================
+   v4.18.0 · 3D del tanque semirremolque (sin planos oficiales todavía)
+   Se arma con las medidas de la lista de componentes del «1er pedido de
+   material» del semirremolque de 12.000 galones y la foto del tanque
+   terminado. Aplica a todo modelo de tipo «Semirremolque»: el largo del
+   cuerpo se ajusta a la capacidad del modelo (los diámetros son los de la
+   lista). Se marca como «3D estimado» hasta que lleguen los planos.
+   Medidas (mm) tomadas de la lista:
+   - Cuerpo delantero Ø2.096 con 3 anillos Ø2.190 · tapa frontal Ø2.089 (287)
+   - Sección cónica 1.200 de Ø2.096 a Ø2.232
+   - Cuerpo trasero Ø2.232 con 6 anillos Ø2.326 · tapa posterior Ø2.225 (312)
+   - 2 tapas división (3 compartimientos), 3 rompeolas, 3 manholes Ø516
+   - 2 válvulas internas Ø6" (vástago 2.341) · escalera frontal 2.218 de alto
+   - Escalera interna 2.041 · 2 soportes de extintor
+   - King pin 1.754 × 1.270 × 399 · tren de apoyo 1.466 × 1.593
+   - Chasis 4.685 · 3 ejes a 1.295 · último eje a 767 del final · trocha 2.414
+   - Guardabarros 3.279 × 2.544 · bicicleteros abatibles 4.663 × 347 (LI y LD)
+   ===================================================================== */
+const SR={D1:2.096,D2:2.232,R1:2.190,R2:2.326,Lf:3.6,Lc:1.2,Lr:6.93,hd1:.287,hd2:.312,yb:1.27,gal:12000};
+function srGeo(m){const k=Math.max(.4,Math.min(1.8,(+m.gal||SR.gal)/SR.gal));const R=SR.D2/2;
+ const Lf=+(SR.Lf*k).toFixed(3),Lr=+(SR.Lr*k).toFixed(3),Lb=+(Lf+SR.Lc+Lr).toFixed(3),L=+(SR.hd1+Lb+SR.hd2).toFixed(3);
+ return{sr:true,est:true,plano:'',L,a:R,bt:R,bb:R,n:2,c:SR.yb+R,hd:SR.hd1,Lb,Lf,Lr,k,
+  ref:'lista de componentes del 1er pedido de material y foto del tanque terminado',
+  estim:'Diámetros, tapas, anillos, chasis, ejes, king pin y tren de apoyo según la lista de componentes; el largo del cuerpo sale de la capacidad. Para el 3D exacto faltan los planos oficiales.',
+  secMM:'Ø '+nf0.format(SR.D1*1000)+' → Ø '+nf0.format(SR.D2*1000)+' mm (cónico) · largo ≈ '+nf0.format(L*1000)+' mm',
+  cam:{dist:+(19*Math.max(.8,L/12.33)).toFixed(2),ty:1.55}}}
+/* tronco de cono a lo largo de x, con el fondo alineado (yb) */
+G.prototype.srCono=function(x0,x1,r0,r1,yb,seg=56){const P_=(x,r,t)=>[gx(x),yb+r+r*Math.sin(t),r*Math.cos(t)];
+ for(let i=0;i<seg;i++){const t0=i/seg*Math.PI*2,t1=(i+1)/seg*Math.PI*2;const n0=[0,Math.sin(t0),Math.cos(t0)],n1=[0,Math.sin(t1),Math.cos(t1)];
+  this.quad(P_(x0,r0,t0),P_(x1,r1,t0),P_(x1,r1,t1),P_(x0,r0,t1),n0,n0,n1,n1)}return this};
+function srParts(g){return withTK(g,()=>{const out=[];const add=(geo,o)=>out.push(part(geo,o));const R=g.a,yb=SR.yb;
+ const s1=SR.D1/SR.D2;const X=x=>g.hd+x;                         /* x del cuerpo → x del tanque */
+ const cAt=x=>x<g.Lf?yb+R*s1:x>g.Lf+SR.Lc?yb+R:yb+R*(s1+(1-s1)*(x-g.Lf)/SR.Lc);   /* centro de la sección */
+ const rAt=x=>cAt(x)-yb;                                          /* radio de la sección */
+ const conC=(c,fn)=>{const o=TK.c;TK.c=c;try{return fn()}finally{TK.c=o}};
+ const x2=g.Lf+SR.Lc,xe=g.Lb;
+ // ---- cuerpo
+ add(conC(yb+R*s1,()=>new G().shell(X(0),X(g.Lf),0,Math.PI*2,s1,72)),{nm:'Lámina cuerpo delantero (Ø2.096)',sec:'CUERPO',cods:[],ex:[-.5,0,0],shell:1});
+ add(new G().srCono(X(g.Lf),X(x2),R*s1,R,yb),{nm:'Lámina sección cónica (Ø2.096 → Ø2.232)',sec:'CUERPO',cods:[],ex:[0,0,0],shell:1});
+ add(conC(yb+R,()=>new G().shell(X(x2),X(xe),0,Math.PI*2,1,72)),{nm:'Lámina cuerpo trasero (Ø2.232)',sec:'CUERPO',cods:[],ex:[.5,0,0],shell:1});
+ add(conC(yb+R*s1,()=>new G().cap(X(0),-1,SR.hd1,SR.D1/SR.D2*.997)),{nm:'Tapa frontal sección 1 (Ø2.089)',sec:'TAPAS',cods:[],ex:[-1.6,0,0],shell:1});
+ add(conC(yb+R,()=>new G().cap(X(xe),1,SR.hd2,SR.D2/SR.D2*.997)),{nm:'Tapa posterior sección 1 (Ø2.225)',sec:'TAPAS',cods:[],ex:[1.6,0,0],shell:1});
+ // ---- anillos exteriores
+ const ev=(n,a,b)=>Array.from({length:n},(_,i)=>a+(b-a)*(i+1)/(n+1));
+ ev(3,0,g.Lf).forEach((x,i)=>add(conC(cAt(x),()=>new G().shell(X(x)-.051,X(x)+.051,0,Math.PI*2,SR.R1/SR.D2,64)),{nm:'Anillo cuerpo delantero '+(i+1)+' (Ø2.190)',sec:'ANILLOS',cods:[],ex:[-.3,.25,0]}));
+ ev(6,x2,xe).forEach((x,i)=>add(conC(cAt(x),()=>new G().shell(X(x)-.051,X(x)+.051,0,Math.PI*2,SR.R2/SR.D2,64)),{nm:'Anillo cuerpo trasero '+(i+1)+' (Ø2.326)',sec:'ANILLOS',cods:[],ex:[.3,.25,0]}));
+ // ---- divisiones (3 compartimientos) y rompeolas
+ const d1=+(x2+.05).toFixed(3),d2=+(x2+(xe-x2)*.515).toFixed(3);
+ [d1,d2].forEach((x,i)=>add(conC(cAt(x),()=>new G().baffle(X(x),.985,.012)),{nm:'Tapa división '+(i+1)+' y refuerzos internos',sec:'DIVISIONES Y ROMPEOLAS',cods:[],ex:[0,1.1,0]}));
+ [[g.Lf*.5,'Rompeolas cuerpo delantero (Ø2.087)'],[(d1+d2)/2,'Rompeolas cuerpo trasero 1 (Ø2.225)'],[(d2+xe)/2,'Rompeolas cuerpo trasero 2 (Ø2.225)']].forEach(([x,nm])=>
+  add(conC(cAt(x),()=>new G().baffle(X(x),.975,.2)),{nm,sec:'DIVISIONES Y ROMPEOLAS',cods:[],ex:[0,1.4,0]}));
+ // ---- manholes (uno por compartimiento)
+ [(0+d1)/2-.4,(d1+d2)/2,(d2+xe)/2].forEach((x,i)=>{const yt=cAt(x)+rAt(x);
+  add(new G().cyl(gx(X(x)),yt+.07,0,.258,.17,'y',28,.238),{nm:'Manhole 4 cierres '+(i+1)+' · cuello Ø516',sec:'MANHOLES',cods:[],ex:[0,1.0,0]});
+  add(new G().cyl(gx(X(x)),yt+.17,0,.27,.045,'y',28),{nm:'Manhole 4 cierres '+(i+1)+' · tapa',sec:'MANHOLES',cods:[],ex:[0,1.5,0]})});
+ // ---- válvulas internas Ø6" (vástago desde arriba y cuerpo bajo el tanque)
+ [d1-.45,d2-.45].forEach((x,i)=>{const xx=gx(X(x)),yt=cAt(x)+rAt(x),gg=new G();
+  gg.tube([[xx,yb+.02,0],[xx,yt+.09,0]],.018,8);gg.cyl(xx,yt+.1,0,.07,.02,'y',16);gg.cyl(xx,yb-.12,0,.12,.22,'y',20);gg.cyl(xx,yb-.24,0,.16,.03,'y',20);
+  add(gg,{nm:'Válvula interna Ø6" '+(i+1)+' con apertura',sec:'VÁLVULAS',cods:[],ex:[0,-1.2,0]})});
+ // ---- escalera frontal y escalera interna
+ {const x=gx(-.12),yt=yb+2*R*s1,gg=new G();[-.2225,.2225].forEach(z=>gg.tube([[x,yb-.9,z],[x,yt-.05,z],[x+.2,yt+.25,z*2.4],[x+.95,yt+.25,z*2.4]],.022,10));
+  for(let k=0;k<6;k++)gg.box(x,yb-.65+k*.4,0,.05,.025,.43);add(gg,{nm:'Escalera frontal',sec:'ESCALERAS',cods:[],ex:[-1.3,0,0]})}
+ {const x=gx(X((0+d1)/2-.4)),gg=new G();[-.19,.19].forEach(z=>gg.tube([[x,yb+.08,z],[x,yb+2.1,z]],.016,8));for(let k=0;k<3;k++)gg.box(x,yb+.6+k*.5,0,.03,.03,.38);
+  add(gg,{nm:'Escalera interna cuerpo delantero',sec:'ESCALERAS',cods:[],ex:[0,.6,0]})}
+ // ---- king pin (estructura delantera bajo el tanque)
+ {const x0=.25,gg=new G(),xc=gx(X(x0+.877));gg.box(xc,yb-.2,0,1.754,.4,1.27);gg.cyl(xc-.3,yb-.48,0,.045,.16,'y',14);
+  add(gg,{nm:'Estructura king pin',sec:'KING PIN',cods:[],ex:[0,-1.1,0]})}
+ // ---- tren de apoyo
+ {const x=gx(X(2.75)),gg=new G();[-.733,.733].forEach(z=>{gg.box(x,(yb-.05)/2+.05,z,.12,yb-.15,.12);gg.box(x,.03,z,.3,.03,.3)});
+  gg.box(x,yb-.12,0,.16,.2,1.6);gg.box(x,.65,0,.07,.07,1.47);gg.tube([[x,yb-.2,.733],[x+.55,yb-.04,.733]],.02,6);gg.tube([[x,yb-.2,-.733],[x+.55,yb-.04,-.733]],.02,6);
+  add(gg,{nm:'Tren de apoyo (patas)',sec:'TREN DE APOYO',cods:[],ex:[0,-.9,0]})}
+ // ---- chasis y ejes
+ const xc1=X(xe)+SR.hd2*.4,xc0=xc1-4.685,yc=yb-.16;
+ {const gg=new G();[-.5,.5].forEach(z=>gg.box(gx((xc0+xc1)/2),yc,z,4.685,.26,.14));for(let k=0;k<6;k++)gg.box(gx(xc0+.2+k*(4.285/5)),yc,0,.1,.18,1.0);
+  gg.box(gx(xc1-.05),.62,0,.12,.14,2.42);[-1,1].forEach(z=>gg.box(gx(xc1-.05),.82,z*.6,.08,.4,.08));
+  [[xc0+.6],[xc0+2.2],[xc1-.7]].forEach(([x])=>[-1,1].forEach(s=>gg.box(gx(x),yb-.02,s*.62,.5,.06,.28)));
+  add(gg,{nm:'Estructura chasis (largueros, travesaños, cunas y parachoques)',sec:'CHASIS',cods:[],ex:[0,-.7,0]})}
+ [2,1,0].forEach(i=>{const xa=gx(xc1-.767-i*1.295),gg=new G();gg.cyl(xa,.52,0,.075,2.12,'z',14);
+  [-1,1].forEach(s=>{[1.067,.767].forEach(z=>{gg.cyl(xa,.52,s*z,.52,.27,'z',28,.3);gg.cyl(xa,.52,s*z,.3,.2,'z',20)});gg.cyl(xa,.8,s*.5,.13,.22,'y',16)});
+  add(gg,{nm:'Eje '+(3-i)+' con llantas, rines y suspensión',sec:'CHASIS',cods:[],ex:[0,-1.3,0]})});
+ // ---- guardabarros
+ {const xm=gx(xc1-.767-1.295),gg=new G();[-1,1].forEach(s=>{gg.box(xm,1.16,s*.92,3.279,.015,.66);gg.box(xm+1.64,.78,s*.92,.015,.75,.6);gg.box(xm-1.64,.95,s*.92,.015,.42,.6)});
+  add(gg,{nm:'Ensamble guardabarros',sec:'GUARDABARROS',cods:[],ex:[0,.25,0]})}
+ // ---- bicicleteros abatibles (protección lateral)
+ [-1,1].forEach(s=>{const xa=X(3.3),xb=xa+4.663,gg=new G(),z=s*1.12;[.62,.93].forEach(y=>gg.box(gx((xa+xb)/2),y,z,4.663,.06,.05));
+  [xa+.17,xa+.17+1.301,xb-.07].forEach(x=>{gg.box(gx(x),.95,z,.06,.66,.05);gg.tube([[gx(x),1.26,z],[gx(x),1.5,s*.98],[gx(x),1.8,s*.86]],.03,6)});
+  add(gg,{nm:'Bicicletero abatible '+(s<0?'izquierdo':'derecho'),sec:'BICICLETEROS',cods:[],ex:[0,0,s*.8]})});
+ // ---- soportes de extintor (sobre el chasis, adelante de los ejes)
+ [-1,1].forEach(s=>{const x=gx(xc0+.35),gg=new G();gg.cyl(x,.95,s*1.16,.1,.05,'y',16,.085);gg.cyl(x,.62,s*1.16,.1,.04,'y',16);gg.box(x,.8,s*1.27,.04,.45,.03);
+  add(gg,{nm:'Soporte extintor '+(s<0?'LI':'LD'),sec:'EXTINTORES',cods:[],ex:[0,0,s*.6],small:1})});
+ return out})}
+/* registrar la geometría de los modelos semirremolque */
+function srRegistrar(){(S&&S.modelos||[]).forEach(m=>{if(m.tipo==='Semirremolque'){const g=srGeo(m);GEO[m.id]=g;m.L=g.L;m.sc=+((g.bt+g.bb)/1.652).toFixed(3)}})}
+{const _gp=geoParts;geoParts=function(g){return g&&g.sr?srParts(g):_gp(g)}}
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);try{srRegistrar()}catch(e){console.error(e)}return r}}
 
 </script>
 </body>
