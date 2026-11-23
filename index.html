@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.18.0 · bloque 6';
+const VERSION='4.18.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7060,7 +7060,7 @@ ACT.matInactivos=()=>{const H=MAT_CAMB.slice().reverse().slice(0,60);
    - 3D de un modelo nuevo: estimado por galones (o por el largo que se escriba).
    ===================================================================== */
 PERM['Diseño']=[...new Set([...(PERM['Diseño']||[]),'mod.crear'])];
-Object.assign(ACT_PERM,{modNew:'mod.crear',modEd:'mod.crear',modGo:'mod.crear',modAct:'mod.crear'});
+Object.assign(ACT_PERM,{modDel:'mod.crear',modDelGo:'mod.crear',modNew:'mod.crear',modEd:'mod.crear',modGo:'mod.crear',modAct:'mod.crear'});
 let MOD_DB=null;
 /* largo (m) y sección estimados por galones, interpolando entre los modelos conocidos */
 function modEst(gal){const R=MODELOS0.slice().sort((a,b)=>a.gal-b.gal);if(gal<=R[0].gal)return{L:R[0].L*gal/R[0].gal,sc:R[0].sc};
@@ -7084,7 +7084,7 @@ function modAplicar(){if(!MOD_DB||!S)return;const prev=S.modelos||[];
  const pj=id=>S.proys.filter(p=>p.modelo===id&&p.id!=='00000');
  regT('modl','Modelos de tanque',['Modelo','Nombre','Tipo','Galones','Largo (m)','Proyectos','Estado'],M_.map(m=>[m.id,m.nom,m.tipo||'Tanque',m.gal,+(+m.L).toFixed(2),pj(m.id).length,m.activo===false?'Inactivo':'Activo']));
  const card=`<div class="card"><div class="ch"><div><h3>Modelos de tanque</h3><p>Los que salen al crear un proyecto. Gerencia y Diseño crean, editan e inactivan; no se borran.</p></div><div class="acts">${xbtns('modl')}<button class="btn sm" data-act="modNew">${icon('plus',14)}Nuevo modelo</button></div></div>
- <div class="tw"><table class="t"><thead><tr><th>Modelo</th><th>Nombre</th><th>Tipo</th><th class="r">Galones</th><th class="r">Largo</th><th>Proyectos</th><th>Estado</th><th></th></tr></thead><tbody>${M_.map(m=>{const p=pj(m.id);return`<tr${m.activo===false?' style="opacity:.6"':''}><td class="nm ttl"><span class="mcap">${esc(m.id)}</span></td><td data-l="Nombre">${esc(m.nom)}</td><td data-l="Tipo">${esc(m.tipo||'Tanque')}</td><td data-l="Galones" class="num">${nf0.format(m.gal)}</td><td data-l="Largo" class="num">${nf1.format(m.L)} m${m.largo||m.plano||GEO[m.id]?'':' <span class="sub">(est.)</span>'}</td><td data-l="Proyectos" class="sub">${p.length?p.map(x=>x.id).join(', '):'—'}</td><td data-l="Estado"><span class="bd ${m.activo===false?'n':'ok'}">${m.activo===false?'Inactivo':'Activo'}</span></td><td class="ac"><div style="display:flex;gap:6px;justify-content:flex-end;align-items:center"><button class="ib" data-act="modEd" data-v="${esc(m.id)}" aria-label="Editar modelo">${icon('edit',14)}</button><button class="btn ghost sm" data-act="modAct" data-v="${esc(m.id)}">${m.activo===false?icon('redo',14)+'Activar':icon('flag',14)+'Inactivar'}</button></div></td></tr>`}).join('')}</tbody></table></div></div>`;
+ <div class="tw"><table class="t"><thead><tr><th>Modelo</th><th>Nombre</th><th>Tipo</th><th class="r">Galones</th><th class="r">Largo</th><th>Proyectos</th><th>Estado</th><th></th></tr></thead><tbody>${M_.map(m=>{const p=pj(m.id);return`<tr${m.activo===false?' style="opacity:.6"':''}><td class="nm ttl"><span class="mcap">${esc(m.id)}</span></td><td data-l="Nombre">${esc(m.nom)}</td><td data-l="Tipo">${esc(m.tipo||'Tanque')}</td><td data-l="Galones" class="num">${nf0.format(m.gal)}</td><td data-l="Largo" class="num">${nf1.format(m.L)} m${m.largo||m.plano||GEO[m.id]?'':' <span class="sub">(est.)</span>'}</td><td data-l="Proyectos" class="sub">${p.length?p.map(x=>x.id).join(', '):'—'}</td><td data-l="Estado"><span class="bd ${m.activo===false?'n':'ok'}">${m.activo===false?'Inactivo':'Activo'}</span></td><td class="ac"><div style="display:flex;gap:6px;justify-content:flex-end;align-items:center"><button class="ib" data-act="modEd" data-v="${esc(m.id)}" aria-label="Editar modelo">${icon('edit',14)}</button><button class="btn ghost sm" data-act="modAct" data-v="${esc(m.id)}">${m.activo===false?icon('redo',14)+'Activar':icon('flag',14)+'Inactivar'}</button><button class="ib" data-act="modDel" data-v="${esc(m.id)}" ${p.length?'disabled data-tip="Lo usan proyectos: no se elimina; puedes inactivarlo"':'data-tip="Eliminar modelo (sin proyectos)"'} aria-label="Eliminar modelo">${icon('trash',14)}</button></div></td></tr>`}).join('')}</tbody></table></div></div>`;
  const h2=h.replace('<b>Modelos y kits se activa más adelante.</b> Por ahora el BOM de cada proyecto lo envía Diseño y se carga en Proyectos. Esta pantalla solo se puede consultar.','<b>Los modelos de tanque se crean aquí</b> (Gerencia y Diseño). Los BOM y kits por modelo se activan más adelante: por ahora el BOM de cada proyecto lo envía Diseño y se carga en Proyectos.');
  const i=h2.indexOf('<div class="mgrid">');return i<0?card+h2:h2.slice(0,i)+card+h2.slice(i)}}
 
@@ -7112,6 +7112,12 @@ ACT.modGo=async(v,el)=>{const p={nuevo:!v,id:v||$('#mdId').value.trim().toUpperC
 ACT.modAct=async(v,el)=>{if(el&&el.disabled)return;const m=MOD(v);if(!m)return;const act=m.activo===false;
  await sbAccion(el,act?'Activando…':'Inactivando…',async()=>{const {error}=await SB.rpc('alm_modelo_activo',{p_id:v,p_activo:act});if(error)throw error;
   await cargarDatos();rerender();toast(act?`Modelo ${esc(v)} activo: sale en «Nuevo proyecto».`:`Modelo ${esc(v)} inactivo: ya no sale en «Nuevo proyecto». Los proyectos que lo tienen no cambian.`,'ok')})};
+
+ACT.modDel=(v,el)=>{if(el&&el.disabled)return;const m=MOD(v);if(!m)return;
+ modal(mh('Eliminar modelo '+esc(v),'Solo se puede eliminar porque ningún proyecto lo usa. Si lo necesitas después, lo creas de nuevo.')+`<p class="mut" style="line-height:1.55"><b>${esc(v)}</b> · ${esc(m.nom)} · ${nf0.format(m.gal)} galones</p>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="modDelGo" data-v="${esc(v)}">${icon('trash',16)}Eliminar</button></div>`,'s')};
+ACT.modDelGo=async(v,el)=>{await sbAccion(el,'Eliminando…',async()=>{const {error}=await SB.rpc('alm_modelo_eliminar',{p_id:v});if(error)throw error;
+ if(typeof GEO!=='undefined'&&GEO[v]&&GEO[v].sr)delete GEO[v];await cargarDatos();closeModal();rerender();toast(`Modelo ${esc(v)} eliminado.`,'ok')})};
 
 /* =====================================================================
    v4.17.0 · Inventario de terceros: MECAMEL (SQL 32)
