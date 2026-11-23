@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.17.1 · bloque 6';
+const VERSION='4.17.2 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7124,7 +7124,7 @@ ACT.modAct=async(v,el)=>{if(el&&el.disabled)return;const m=MOD(v);if(!m)return;c
    ===================================================================== */
 let TI=[],TM=[],TD=[],TE=[],TCD=null,TCE=null,TIM={};
 PERM['Auxiliar']=PERM['Auxiliar']==='*'?'*':[...new Set([...(PERM['Auxiliar']||[]),'terc.op'])];
-Object.assign(ACT_PERM,{tcInvPdf:'terc.op',tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcDesGo:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
+Object.assign(ACT_PERM,{tcInvPdf:'terc.op',tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcDesGo:'terc.op',tcDesEd:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
 const TC_ED=()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
 const nfU=new Intl.NumberFormat('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
 const usd=v=>'US$ '+nfU.format(+v||0);
@@ -7133,7 +7133,7 @@ const tq=v=>qf(+v||0);
  try{const [i,m,d,e]=await Promise.all([
    leerTodo('alm_terc_items','cod,descripcion,um,costo_usd,cantidad,ubicacion,grupo,origen,fecha_appolo,actualizado_en','cod'),
    leerTodo('alm_terc_movs','id,fecha,hora,tipo,documento,cod,cantidad,saldo,costo_usd,cliente,motivo,ref,usuario','id'),
-   leerTodo('alm_terc_despachos','id,remision,fecha,cliente,lineas,entrega,recibe,observaciones,estado,anulado_motivo,anulado_por,usuario,creado_en','id'),
+   leerTodo('alm_terc_despachos','*','id'),
    leerTodo('alm_terc_entradas','id,documento,fecha,lineas,observaciones,usuario,creado_en','id')]);
   TI=(i||[]).map(x=>({...x,cantidad:+x.cantidad,costo_usd:+x.costo_usd}));TM=(m||[]).map(x=>({...x,cantidad:+x.cantidad,saldo:+x.saldo,costo_usd:+x.costo_usd}));
   TD=(d||[]).sort((a,b)=>b.id.localeCompare(a.id));TE=(e||[]).sort((a,b)=>b.id.localeCompare(a.id));TIM={};TI.forEach(x=>TIM[x.cod]=x)}
@@ -7186,8 +7186,8 @@ function tcDesp(){const L=TD;
   <td class="nm"><b>${esc(d.remision)}</b><div class="sub">${esc(d.id)}</div></td><td data-l="Fecha">${fd(d.fecha)}</td><td data-l="Cliente">${esc(d.cliente)}</td>
   <td data-l="Referencias">${d.lineas.length} · ${tq(d.lineas.reduce((s,l)=>s+(+l.q),0))} und<div class="sub">${usd(d.lineas.reduce((s,l)=>s+(+l.q)*(+l.costo_usd||0),0))}</div></td>
   <td data-l="Registró" class="sub">${esc(d.usuario||'')}</td>
-  <td data-l="Estado">${d.estado==='Anulado'?`<span class="bd">Anulado</span><div class="sub">${esc(d.anulado_motivo)}</div>`:'<span class="bd ok">Despachado</span>'}</td>
-  <td><div class="acts" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn ghost sm" data-act="tcPdf" data-v="${esc(d.id)}">${icon('pdf',14)}PDF</button>${d.estado!=='Anulado'?`<button class="ib" data-act="tcAnu" data-v="${esc(d.id)}" data-tip="Anular remisión">${icon('trash',15)}</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`
+  <td data-l="Estado">${d.estado==='Anulado'?`<span class="bd">Anulado</span><div class="sub">${esc(d.anulado_motivo)}</div>`:'<span class="bd ok">Despachado</span>'}${(d.hist||[]).length?`<div class="sub">Corregida ${(d.hist||[]).length} ${(d.hist||[]).length>1?'veces':'vez'}</div>`:''}</td>
+  <td><div class="acts" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn ghost sm" data-act="tcPdf" data-v="${esc(d.id)}">${icon('pdf',14)}PDF</button>${d.estado!=='Anulado'?`<button class="ib" data-act="tcDesEd" data-v="${esc(d.id)}" data-tip="Corregir remisión">${icon('edit',15)}</button><button class="ib" data-act="tcAnu" data-v="${esc(d.id)}" data-tip="Anular remisión">${icon('trash',15)}</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`
  :`<p class="sub">Todavía no hay remisiones. Toca «Nueva remisión de despacho» cuando salga mercancía para GARSITE.</p>`}</div>`}
 
 function tcEntr(){const L=TE;
@@ -7283,29 +7283,38 @@ ACT.tcEntGo=async(v,el)=>{tcEntLeer();const L=TCE.lineas.filter(l=>String(l.cod)
 /* ---------- Remisión de despacho ---------- */
 const tcSigRem=()=>{const n=TD.map(d=>(/^RM-(\d+)$/.exec(d.remision)||[])[1]).filter(Boolean).map(Number);return'RM-'+String((n.length?Math.max(...n):0)+1).padStart(4,'0')};
 ACT.tcDes=(v,el)=>{if(el&&el.disabled)return;TCD={rem:'',fecha:HOY,cli:'GARSITE',obs:'',lineas:[{cod:'',q:''}]};tcDesForm()};
-function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;TCD.obs=$('#tdO').value;
+function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;TCD.obs=$('#tdO').value;if($('#tdM'))TCD.mot=$('#tdM').value;
  document.querySelectorAll('[data-td]').forEach(e=>{const [i,k]=e.dataset.td.split('|');TCD.lineas[+i][k]=e.value})}
-function tcDesForm(){const L=TCD.lineas;
- modal(mh('Nueva remisión de despacho','Mercancía de MECAMEL que sale para el cliente. Descuenta del inventario de MECAMEL.')+`<datalist id="tcCods">${TI.filter(x=>x.cantidad>0).map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(x.cantidad)}</option>`).join('')}</datalist>
- <div class="two"><div class="fld"><label for="tdR">N.º de remisión</label><input class="inp" id="tdR" maxlength="30" placeholder="Automática: ${tcSigRem()}" value="${esc(TCD.rem)}"></div>
+const tcDisp=c=>{const x=TIM[c];return x?x.cantidad+((TCD&&TCD.orig&&TCD.orig[c])||0):0};
+function tcDesForm(){const L=TCD.lineas;const ed=!!TCD.id;
+ modal(mh(ed?'Corregir remisión '+esc(TCD.remOrig):'Nueva remisión de despacho',ed?'Cambia códigos, cantidades o datos. Cada diferencia queda en el kárdex de MECAMEL como «Corrección» y la remisión guarda cómo estaba antes.':'Mercancía de MECAMEL que sale para el cliente. Descuenta del inventario de MECAMEL.')+`<datalist id="tcCods">${TI.filter(x=>tcDisp(x.cod)>0).map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(tcDisp(x.cod))}</option>`).join('')}</datalist>
+ <div class="two"><div class="fld"><label for="tdR">N.º de remisión</label><input class="inp" id="tdR" maxlength="30" placeholder="${ed?'':'Automática: '+tcSigRem()}" value="${esc(TCD.rem)}"></div>
  <div class="fld"><label for="tdF">Fecha</label><input class="inp" id="tdF" type="date" max="${HOY}" value="${esc(TCD.fecha)}"></div>
  <div class="fld" style="grid-column:1/-1"><label for="tdC">Cliente</label><input class="inp" id="tdC" maxlength="60" value="${esc(TCD.cli)}"></div></div>
  <div class="lb" style="margin:12px 0 6px">Referencias que salen</div>
  ${L.map((l,i)=>`<div class="tcl"><span class="recn">${i+1}</span><input class="inp" data-td="${i}|cod" list="tcCods" placeholder="Código" value="${esc(l.cod)}"><input class="inp" data-td="${i}|q" type="number" min="0" step="any" inputmode="decimal" placeholder="Cantidad" value="${esc(l.q)}"><button class="ib" data-act="tcDeDel" data-v="${i}" aria-label="Quitar línea">${icon('trash',14)}</button><div class="tcx" id="tdx${i}">${tcDesInfo(i)}</div></div>`).join('')}
  <button class="btn ghost sm" data-act="tcDeAdd">${icon('plus',14)}Agregar referencia</button>
  <div class="fld" style="margin-top:12px"><label for="tdO">Observaciones</label><input class="inp" id="tdO" maxlength="300" value="${esc(TCD.obs)}"></div>
+ ${ed?`<div class="fld" style="margin-top:12px"><label for="tdM">Motivo de la corrección (obligatorio)</label><input class="inp" id="tdM" maxlength="300" placeholder="Ej.: se digitó mal el código" value="${esc(TCD.mot||'')}"></div>
+ ${(TCD.hist||[]).length?`<div class="lb" style="margin:12px 0 6px">Correcciones anteriores</div><div class="sub" style="line-height:1.6">${TCD.hist.slice().reverse().map(h=>`${esc(h.f)} · ${esc(h.u)} · ${esc(h.motivo)}<br><span style="opacity:.8">Antes: ${esc(h.antes.remision)} · ${(h.antes.lineas||[]).map(l=>esc(l.cod)+' × '+tq(l.q)).join(', ')}</span>`).join('<br>')}</div>`:''}`:''}
  <div class="note" style="margin-top:12px">${icon('info',16)}<span>Los nombres y las firmas de <b>quien entrega</b> y <b>quien recibe</b> quedan en blanco en la remisión: se llenan a mano en la remisión impresa al entregar la mercancía.</span></div>
- <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcDesGo">${icon('truck',16)}Despachar y generar remisión</button></div>`,'w');
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcDesGo">${ed?icon('check',16)+'Guardar corrección':icon('truck',16)+'Despachar y generar remisión'}</button></div>`,'w');
  document.querySelectorAll('[data-td$="|cod"],[data-td$="|q"]').forEach(e=>e.addEventListener('input',()=>{const i=e.dataset.td.split('|')[0];tcDesLeer();const z=$('#tdx'+i);if(z)z.innerHTML=tcDesInfo(+i)}))}
-function tcDesInfo(i){const l=TCD.lineas[i];const c=String(l.cod).trim().toUpperCase();const x=TIM[c];const mal=x&&+numIn(l.q)>x.cantidad;
- return x?`<span class="sub"${mal?' style="color:var(--er,#c0392b)"':''}>${esc(x.descripcion)} · hay ${tq(x.cantidad)} ${esc(x.um.toLowerCase())}${mal?' · no alcanza':''}</span>`:c?`<span class="sub" style="color:var(--er,#c0392b)">Ese código no está en el inventario de MECAMEL</span>`:''}
+function tcDesInfo(i){const l=TCD.lineas[i];const c=String(l.cod).trim().toUpperCase();const x=TIM[c];const mal=x&&+numIn(l.q)>tcDisp(c);
+ return x?`<span class="sub"${mal?' style="color:var(--er,#c0392b)"':''}>${esc(x.descripcion)} · hay ${tq(tcDisp(c))} ${esc(x.um.toLowerCase())}${mal?' · no alcanza':''}</span>`:c?`<span class="sub" style="color:var(--er,#c0392b)">Ese código no está en el inventario de MECAMEL</span>`:''}
+ACT.tcDesEd=(v,el)=>{if(el&&el.disabled)return;const d=TD.find(x=>x.id===v);if(!d||d.estado==='Anulado')return;const orig={};d.lineas.forEach(l=>orig[l.cod]=(orig[l.cod]||0)+(+l.q));
+ TCD={id:d.id,remOrig:d.remision,rem:d.remision,fecha:d.fecha,cli:d.cliente,obs:d.observaciones||'',mot:'',orig,hist:d.hist||[],lineas:d.lineas.map(l=>({cod:l.cod,q:String(+l.q)}))};tcDesForm()};
 ACT.tcDeAdd=()=>{tcDesLeer();TCD.lineas.push({cod:'',q:''});tcDesForm()};
 ACT.tcDeDel=v=>{tcDesLeer();TCD.lineas.splice(+v,1);if(!TCD.lineas.length)TCD.lineas.push({cod:'',q:''});tcDesForm()};
 ACT.tcDesGo=async(v,el)=>{tcDesLeer();const L=TCD.lineas.filter(l=>String(l.cod).trim()).map(l=>({cod:String(l.cod).trim().toUpperCase(),q:numIn(l.q)}));
  if(!L.length){toast('Agrega al menos una referencia.','er');return}
  const no=L.find(l=>!TIM[l.cod]);if(no){toast(esc(no.cod)+' no está en el inventario de MECAMEL.','er');return}
  if(L.some(l=>!(l.q>0))){toast('Cada referencia necesita una cantidad mayor que 0.','er');return}
- const pas=L.find(l=>l.q>TIM[l.cod].cantidad);if(pas){toast(`No alcanza ${esc(pas.cod)}: hay ${tq(TIM[pas.cod].cantidad)}.`,'er');return}
+ const pas=L.find(l=>l.q>tcDisp(l.cod));if(pas){toast(`No alcanza ${esc(pas.cod)}: hay ${tq(tcDisp(pas.cod))}.`,'er');return}
+ if(L.some((l,i)=>L.findIndex(z=>z.cod===l.cod)!==i)){toast('Hay una referencia repetida: déjala en una sola línea.','er');return}
+ if(TCD.id){if(String(TCD.mot||'').trim().length<4){toast('Escribe el motivo de la corrección.','er');$('#tdM').focus();return}
+  await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despacho_editar',{p:{id:TCD.id,remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,motivo:TCD.mot.trim()}});if(error)throw error;
+   TCD=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} corregida (${data.movimientos} movimiento${data.movimientos===1?'':'s'} en el kárdex).`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)});return}
  if(!TCD.tok)TCD.tok='td'+Date.now()+Math.random().toString(36).slice(2,8);
  await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,tok:TCD.tok}});if(error)throw error;
   TCD=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} despachada.`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)})};
