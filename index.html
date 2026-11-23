@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.17.0 · bloque 6';
+const VERSION='4.17.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7119,13 +7119,12 @@ ACT.modAct=async(v,el)=>{if(el&&el.disabled)return;const m=MOD(v);if(!m)return;c
    GARSITE. NO es inventario de Latamks: tablas propias (alm_terc_*), no suma
    en materiales, kárdex, costos, tablero ni proyectos. Valores en dólares.
    - Cargar desde Appolo («Listado de productos»): solo Gerencia.
-   - Entradas y remisiones de despacho (firma de quien entrega = firma
-     registrada en Ajustes; firma de quien recibe = en pantalla): Auxiliar o
-     Gerencia. Ajustes y anular remisiones: solo Gerencia.
+   - Entradas y remisiones de despacho: Auxiliar o Gerencia. Los nombres y
+     firmas de quien entrega y recibe van en blanco (se firman a mano, v4.17.1). Ajustes y anular remisiones: solo Gerencia.
    ===================================================================== */
 let TI=[],TM=[],TD=[],TE=[],TCD=null,TCE=null,TIM={};
 PERM['Auxiliar']=PERM['Auxiliar']==='*'?'*':[...new Set([...(PERM['Auxiliar']||[]),'terc.op'])];
-Object.assign(ACT_PERM,{tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcDesGo:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
+Object.assign(ACT_PERM,{tcInvPdf:'terc.op',tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcDesGo:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
 const TC_ED=()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
 const nfU=new Intl.NumberFormat('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
 const usd=v=>'US$ '+nfU.format(+v||0);
@@ -7169,7 +7168,7 @@ ACT.tcTab=v=>{U.f.tcT=v;rerender()};
 function tcExis(){const f=U.f;const q=nrmH(f.tcQ||'');const solo=f.tcS!=='0';
  const L=TI.filter(x=>(!solo||x.cantidad>0)&&(!q||nrmH(x.cod+' '+x.descripcion+' '+x.ubicacion).includes(q)));
  regT('terc','Inventario MECAMEL (servicio logístico)',['Código','Descripción','Unidad','Ubicación','Cantidad','Valor unitario USD','Valor USD','Última carga Appolo'],L.map(x=>[x.cod,x.descripcion,x.um,x.ubicacion,x.cantidad,x.costo_usd,+(x.cantidad*x.costo_usd).toFixed(2),x.fecha_appolo||'']));
- return`<div class="card"><div class="ch"><div><h3>Existencias de MECAMEL</h3><p>${nf0.format(L.length)} referencias · ${usd(L.reduce((s,x)=>s+x.cantidad*x.costo_usd,0))}</p></div><div class="acts">${xbtns('terc')}</div></div>
+ return`<div class="card"><div class="ch"><div><h3>Existencias de MECAMEL</h3><p>${nf0.format(L.length)} referencias · ${usd(L.reduce((s,x)=>s+x.cantidad*x.costo_usd,0))}</p></div><div class="acts"><button class="btn ghost sm" data-act="tcInvPdf">${icon('pdf',14)}Imprimir inventario (sin valores)</button>${xbtns('terc')}</div></div>
  <div class="fbar"><input class="inp" data-f="tcQ" placeholder="Buscar código, descripción o ubicación" value="${esc(f.tcQ||'')}" style="max-width:360px">
  <select class="sel" data-f="tcS" style="max-width:200px"><option value="1" ${solo?'selected':''}>Solo con saldo</option><option value="0" ${solo?'':'selected'}>Todas las referencias</option></select></div>
  ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Código</th><th>Descripción</th><th>Ubicación</th><th class="r">Cantidad</th><th class="r">Valor unit.</th><th class="r">Valor USD</th><th></th></tr></thead><tbody>${L.map(x=>`<tr>
@@ -7180,13 +7179,13 @@ function tcExis(){const f=U.f;const q=nrmH(f.tcQ||'');const solo=f.tcS!=='0';
 ACT.tcVerK=v=>{U.f.tcT='kar';U.f.tcK=v;rerender()};
 
 function tcDesp(){const L=TD;
- regT('tcdes','Remisiones de despacho MECAMEL',['Remisión','Fecha','Cliente','#','Código','Descripción','Unidad','Cantidad','Valor USD','Entregó','Recibió','Estado'],
-  L.flatMap(d=>d.lineas.map(l=>[d.remision,d.fecha,d.cliente,l.n,l.cod,l.desc,l.um,+l.q,+((+l.q)*(+l.costo_usd||0)).toFixed(2),(d.entrega||{}).nombre||'',(d.recibe||{}).nombre||'',d.estado])));
+ regT('tcdes','Remisiones de despacho MECAMEL',['Remisión','Fecha','Cliente','#','Código','Descripción','Unidad','Cantidad','Valor USD','Estado'],
+  L.flatMap(d=>d.lineas.map(l=>[d.remision,d.fecha,d.cliente,l.n,l.cod,l.desc,l.um,+l.q,+((+l.q)*(+l.costo_usd||0)).toFixed(2),d.estado])));
  return`<div class="card"><div class="ch"><div><h3>Remisiones de despacho</h3><p>Cada remisión descuenta del inventario de MECAMEL. Solo Gerencia la anula (la mercancía vuelve con un movimiento nuevo).</p></div><div class="acts">${xbtns('tcdes')}</div></div>
- ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Remisión</th><th>Fecha</th><th>Cliente</th><th>Referencias</th><th>Entregó · Recibió</th><th>Estado</th><th></th></tr></thead><tbody>${L.map(d=>`<tr${d.estado==='Anulado'?' style="opacity:.65"':''}>
+ ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Remisión</th><th>Fecha</th><th>Cliente</th><th>Referencias</th><th>Registró</th><th>Estado</th><th></th></tr></thead><tbody>${L.map(d=>`<tr${d.estado==='Anulado'?' style="opacity:.65"':''}>
   <td class="nm"><b>${esc(d.remision)}</b><div class="sub">${esc(d.id)}</div></td><td data-l="Fecha">${fd(d.fecha)}</td><td data-l="Cliente">${esc(d.cliente)}</td>
   <td data-l="Referencias">${d.lineas.length} · ${tq(d.lineas.reduce((s,l)=>s+(+l.q),0))} und<div class="sub">${usd(d.lineas.reduce((s,l)=>s+(+l.q)*(+l.costo_usd||0),0))}</div></td>
-  <td data-l="Firmas" class="sub">${esc((d.entrega||{}).nombre||'')}<br>${esc((d.recibe||{}).nombre||'')}</td>
+  <td data-l="Registró" class="sub">${esc(d.usuario||'')}</td>
   <td data-l="Estado">${d.estado==='Anulado'?`<span class="bd">Anulado</span><div class="sub">${esc(d.anulado_motivo)}</div>`:'<span class="bd ok">Despachado</span>'}</td>
   <td><div class="acts" style="justify-content:flex-end;flex-wrap:nowrap"><button class="btn ghost sm" data-act="tcPdf" data-v="${esc(d.id)}">${icon('pdf',14)}PDF</button>${d.estado!=='Anulado'?`<button class="ib" data-act="tcAnu" data-v="${esc(d.id)}" data-tip="Anular remisión">${icon('trash',15)}</button>`:''}</div></td></tr>`).join('')}</tbody></table></div>`
  :`<p class="sub">Todavía no hay remisiones. Toca «Nueva remisión de despacho» cuando salga mercancía para GARSITE.</p>`}</div>`}
@@ -7283,10 +7282,10 @@ ACT.tcEntGo=async(v,el)=>{tcEntLeer();const L=TCE.lineas.filter(l=>String(l.cod)
 
 /* ---------- Remisión de despacho ---------- */
 const tcSigRem=()=>{const n=TD.map(d=>(/^RM-(\d+)$/.exec(d.remision)||[])[1]).filter(Boolean).map(Number);return'RM-'+String((n.length?Math.max(...n):0)+1).padStart(4,'0')};
-ACT.tcDes=(v,el)=>{if(el&&el.disabled)return;TCD={rem:'',fecha:HOY,cli:'GARSITE',obs:'',lineas:[{cod:'',q:''}],rn:'',rc:'',img:'',trazos:0};tcDesForm()};
-function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;TCD.obs=$('#tdO').value;TCD.rn=$('#tdRn').value;TCD.rc=$('#tdRc').value;
+ACT.tcDes=(v,el)=>{if(el&&el.disabled)return;TCD={rem:'',fecha:HOY,cli:'GARSITE',obs:'',lineas:[{cod:'',q:''}]};tcDesForm()};
+function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;TCD.obs=$('#tdO').value;
  document.querySelectorAll('[data-td]').forEach(e=>{const [i,k]=e.dataset.td.split('|');TCD.lineas[+i][k]=e.value})}
-function tcDesForm(){const L=TCD.lineas;const mia=(S.firmas||{})[U.user.email];
+function tcDesForm(){const L=TCD.lineas;
  modal(mh('Nueva remisión de despacho','Mercancía de MECAMEL que sale para el cliente. Descuenta del inventario de MECAMEL.')+`<datalist id="tcCods">${TI.filter(x=>x.cantidad>0).map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(x.cantidad)}</option>`).join('')}</datalist>
  <div class="two"><div class="fld"><label for="tdR">N.º de remisión</label><input class="inp" id="tdR" maxlength="30" placeholder="Automática: ${tcSigRem()}" value="${esc(TCD.rem)}"></div>
  <div class="fld"><label for="tdF">Fecha</label><input class="inp" id="tdF" type="date" max="${HOY}" value="${esc(TCD.fecha)}"></div>
@@ -7295,22 +7294,11 @@ function tcDesForm(){const L=TCD.lineas;const mia=(S.firmas||{})[U.user.email];
  ${L.map((l,i)=>`<div class="tcl"><span class="recn">${i+1}</span><input class="inp" data-td="${i}|cod" list="tcCods" placeholder="Código" value="${esc(l.cod)}"><input class="inp" data-td="${i}|q" type="number" min="0" step="any" inputmode="decimal" placeholder="Cantidad" value="${esc(l.q)}"><button class="ib" data-act="tcDeDel" data-v="${i}" aria-label="Quitar línea">${icon('trash',14)}</button><div class="tcx" id="tdx${i}">${tcDesInfo(i)}</div></div>`).join('')}
  <button class="btn ghost sm" data-act="tcDeAdd">${icon('plus',14)}Agregar referencia</button>
  <div class="fld" style="margin-top:12px"><label for="tdO">Observaciones</label><input class="inp" id="tdO" maxlength="300" value="${esc(TCD.obs)}"></div>
- <div class="two" style="margin-top:12px">
-  <div class="tcfir"><div class="lb">Entrega (Latamks)</div>${mia?`<img src="${mia.img}" alt="Firma de quien entrega"><div><b>${esc(mia.nombre||U.user.nombre)}</b><div class="sub">${esc(mia.cargo||'')}</div></div>`
-   :`<div class="note wa">${icon('warn',16)}<span>Necesitas tu firma registrada. <button class="btn link sm" data-act="firmaPad">Registrar mi firma</button></span></div>`}</div>
-  <div class="tcfir"><div class="lb">Recibe (cliente)</div><input class="inp" id="tdRn" maxlength="80" placeholder="Nombre de quien recibe" value="${esc(TCD.rn)}"><input class="inp" id="tdRc" maxlength="80" placeholder="Cargo o cédula (opcional)" value="${esc(TCD.rc)}" style="margin-top:6px">
-   <div class="tcpad"><canvas id="tcPad" width="600" height="200" aria-label="Firma de quien recibe"></canvas><span id="tcPadH">Firma aquí con el dedo o el mouse</span></div><button class="btn link sm" data-act="tcPadDel">Borrar firma</button></div></div>
+ <div class="note" style="margin-top:12px">${icon('info',16)}<span>Los nombres y las firmas de <b>quien entrega</b> y <b>quien recibe</b> quedan en blanco en la remisión: se llenan a mano en la remisión impresa al entregar la mercancía.</span></div>
  <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcDesGo">${icon('truck',16)}Despachar y generar remisión</button></div>`,'w');
- document.querySelectorAll('[data-td$="|cod"],[data-td$="|q"]').forEach(e=>e.addEventListener('input',()=>{const i=e.dataset.td.split('|')[0];tcDesLeer();const z=$('#tdx'+i);if(z)z.innerHTML=tcDesInfo(+i)}));tcPad()}
+ document.querySelectorAll('[data-td$="|cod"],[data-td$="|q"]').forEach(e=>e.addEventListener('input',()=>{const i=e.dataset.td.split('|')[0];tcDesLeer();const z=$('#tdx'+i);if(z)z.innerHTML=tcDesInfo(+i)}))}
 function tcDesInfo(i){const l=TCD.lineas[i];const c=String(l.cod).trim().toUpperCase();const x=TIM[c];const mal=x&&+numIn(l.q)>x.cantidad;
  return x?`<span class="sub"${mal?' style="color:var(--er,#c0392b)"':''}>${esc(x.descripcion)} · hay ${tq(x.cantidad)} ${esc(x.um.toLowerCase())}${mal?' · no alcanza':''}</span>`:c?`<span class="sub" style="color:var(--er,#c0392b)">Ese código no está en el inventario de MECAMEL</span>`:''}
-function tcPad(){const c=$('#tcPad');if(!c)return;const x=c.getContext('2d');x.lineWidth=3.2;x.lineCap='round';x.lineJoin='round';x.strokeStyle='#14213d';
- if(TCD.img){const im=new Image();im.onload=()=>x.drawImage(im,0,0,c.width,c.height);im.src=TCD.img;$('#tcPadH').style.display='none'}
- let dib=false,lx=0,ly=0;const pos=e=>{const b=c.getBoundingClientRect();return[(e.clientX-b.left)*c.width/b.width,(e.clientY-b.top)*c.height/b.height]};
- c.addEventListener('pointerdown',e=>{dib=true;[lx,ly]=pos(e);c.setPointerCapture(e.pointerId);$('#tcPadH').style.display='none';e.preventDefault()});
- c.addEventListener('pointermove',e=>{if(!dib)return;const [nx,ny]=pos(e);x.beginPath();x.moveTo(lx,ly);x.lineTo(nx,ny);x.stroke();lx=nx;ly=ny;e.preventDefault()});
- const fin=()=>{if(!dib)return;dib=false;TCD.trazos++;TCD.img=c.toDataURL('image/png')};c.addEventListener('pointerup',fin);c.addEventListener('pointercancel',fin)}
-ACT.tcPadDel=()=>{tcDesLeer();TCD.img='';TCD.trazos=0;tcDesForm()};
 ACT.tcDeAdd=()=>{tcDesLeer();TCD.lineas.push({cod:'',q:''});tcDesForm()};
 ACT.tcDeDel=v=>{tcDesLeer();TCD.lineas.splice(+v,1);if(!TCD.lineas.length)TCD.lineas.push({cod:'',q:''});tcDesForm()};
 ACT.tcDesGo=async(v,el)=>{tcDesLeer();const L=TCD.lineas.filter(l=>String(l.cod).trim()).map(l=>({cod:String(l.cod).trim().toUpperCase(),q:numIn(l.q)}));
@@ -7318,11 +7306,8 @@ ACT.tcDesGo=async(v,el)=>{tcDesLeer();const L=TCD.lineas.filter(l=>String(l.cod)
  const no=L.find(l=>!TIM[l.cod]);if(no){toast(esc(no.cod)+' no está en el inventario de MECAMEL.','er');return}
  if(L.some(l=>!(l.q>0))){toast('Cada referencia necesita una cantidad mayor que 0.','er');return}
  const pas=L.find(l=>l.q>TIM[l.cod].cantidad);if(pas){toast(`No alcanza ${esc(pas.cod)}: hay ${tq(TIM[pas.cod].cantidad)}.`,'er');return}
- if(!(S.firmas||{})[U.user.email]){toast('Primero registra tu firma (Ajustes › Mi firma).','er');return}
- if(TCD.rn.trim().length<3){toast('Escribe el nombre de quien recibe.','er');$('#tdRn').focus();return}
- if(!TCD.img||TCD.trazos<1){toast('Falta la firma de quien recibe.','er');return}
  if(!TCD.tok)TCD.tok='td'+Date.now()+Math.random().toString(36).slice(2,8);
- await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,tok:TCD.tok,recibe:{nombre:TCD.rn.trim(),cargo:TCD.rc.trim(),img:TCD.img}}});if(error)throw error;
+ await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,tok:TCD.tok}});if(error)throw error;
   TCD=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} despachada.`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)})};
 
 /* ---------- Anular remisión (solo Gerencia) ---------- */
@@ -7333,29 +7318,50 @@ ACT.tcAnuGo=async(v,el)=>{const m=$('#tuM').value.trim();if(m.length<4){toast('E
  await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_terc_despacho_anular',{p_id:v,p_motivo:m});if(error)throw error;await cargarDatos();closeModal();rerender();toast('Remisión anulada; la mercancía volvió al inventario de MECAMEL.','ok')})};
 
 /* ---------- PDF de la remisión ---------- */
-function tcPdfDoc(r){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),X=12,AW=W-24;
- const azul=[36,52,107],gris=[90,100,130];let y=12;
+function tcPdfHead(d,tit,sub,kv){const W=d.internal.pageSize.getWidth(),X=12,AW=W-24;const azul=[36,52,107],gris=[90,100,130];const y=12;
  d.setDrawColor(...azul);d.setLineWidth(.4);d.rect(X,y,AW,24);let tx=X+3;
  if(S.cfg&&S.cfg.logo){try{const f=/image\/png/.test(S.cfg.logo)?'PNG':'JPEG';d.addImage(S.cfg.logo,f,X+2,y+3,30,18,undefined,'FAST');tx=X+35}catch(e){}}
- const cx=tx+(W-X-52-tx)/2;d.line(W-X-52,y,W-X-52,y+24);d.setTextColor(20);d.setFont('helvetica','bold');d.setFontSize(12);d.text('REMISIÓN DE DESPACHO',cx,y+8,{align:'center'});
- d.setFont('helvetica','normal');d.setFontSize(8.5);d.text('Servicio logístico de almacenamiento y despacho',cx,y+13.5,{align:'center'});
+ const cx=tx+(W-X-56-tx)/2;d.line(W-X-56,y,W-X-56,y+24);d.setTextColor(20);d.setFont('helvetica','bold');d.setFontSize(12);d.text(tit,cx,y+8,{align:'center'});
+ d.setFont('helvetica','normal');d.setFontSize(8.5);d.text(sub,cx,y+13.5,{align:'center'});
  d.setFontSize(7.5);d.setTextColor(...gris);d.text('LATAMKS S.A.S. · Zona Franca La Cayena, Barranquilla',cx,y+18.5,{align:'center'});
- d.setTextColor(20);d.setFontSize(8);[['Remisión N.º:',r.remision],['Fecha:',String(r.fecha).split('-').reverse().join('/')],['Cliente:',r.cliente],['Propietario:','MECAMEL']].forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-50,y+5.5+i*5);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-27,y+5.5+i*5)});
- y+=29;if(r.estado==='Anulado'){d.setFontSize(9);d.setTextColor(180,30,30);d.setFont('helvetica','bold');d.text('ANULADA · '+(r.anulado_motivo||''),X,y);d.setFont('helvetica','normal');d.setTextColor(20);y+=5}
+ d.setTextColor(20);d.setFontSize(8);kv.forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-54,y+5.5+i*5);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-29,y+5.5+i*5)});
+ return y+29}
+const tcFdmy=f=>String(f).split('-').reverse().join('/');
+function tcPdfPie(d,txt){const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight();const n=d.internal.getNumberOfPages();
+ for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(90,100,130);d.text(txt+' · Página '+i+' de '+n,W-12,H-7,{align:'right'});d.text('Latamks Almacén · Servicio logístico MECAMEL',12,H-7)}}
+function tcPdfDoc(r){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),X=12,AW=W-24;
+ const azul=[36,52,107],gris=[90,100,130];
+ let y=tcPdfHead(d,'REMISIÓN DE DESPACHO','Servicio logístico de almacenamiento y despacho',[['Remisión N.º:',r.remision],['Fecha:',tcFdmy(r.fecha)],['Cliente:',r.cliente],['Propietario:','MECAMEL']]);
+ if(r.estado==='Anulado'){d.setFontSize(9);d.setTextColor(180,30,30);d.setFont('helvetica','bold');d.text('ANULADA · '+(r.anulado_motivo||''),X,y);d.setFont('helvetica','normal');d.setTextColor(20);y+=5}
  d.setFontSize(8);d.setTextColor(...gris);d.text('La mercancía es propiedad de MECAMEL. Latamks presta el servicio de almacenamiento y despacho.',X,y);y+=4;d.setTextColor(20);
  d.autoTable({startY:y,margin:{left:X,right:X},head:[['# Ítem','Código','Descripción','Unidad','Cantidad']],body:r.lineas.map(l=>[l.n,l.cod,l.desc,String(l.um||'').toLowerCase(),tq(l.q)]),theme:'grid',
   styles:{fontSize:8,cellPadding:1.8,lineColor:[180,186,200],lineWidth:.15,textColor:20,valign:'middle'},headStyles:{fillColor:azul,textColor:255,fontStyle:'bold'},columnStyles:{0:{cellWidth:14,halign:'center'},1:{cellWidth:38},3:{cellWidth:18},4:{cellWidth:22,halign:'right'}}});
  y=d.lastAutoTable.finalY+5;
  if(r.observaciones){d.setFont('helvetica','bold');d.text('Observaciones:',X,y);d.setFont('helvetica','normal');const ob=d.splitTextToSize(r.observaciones,AW-28);d.text(ob,X+26,y);y+=ob.length*4+3}
  if(y>H-60){d.addPage();y=16}
- const fil=[['Entrega (Latamks)',r.entrega||{}],['Recibe ('+r.cliente+')',r.recibe||{}]];
- d.autoTable({startY:y,margin:{left:X,right:X},head:[['','Nombre','Cargo','Firma']],body:fil.map(([t,f])=>[t,f.nombre||'',f.cargo||'','']),theme:'grid',
-  styles:{fontSize:8,cellPadding:2,minCellHeight:22,valign:'middle',lineColor:[180,186,200],lineWidth:.15,textColor:20},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold',minCellHeight:7},columnStyles:{0:{fontStyle:'bold',cellWidth:36},3:{cellWidth:62}},
-  didDrawCell:c=>{if(c.section==='body'&&c.column.index===3){const f=fil[c.row.index][1].img;if(f)try{d.addImage(f,'PNG',c.cell.x+1.5,c.cell.y+1.5,c.cell.width-3,c.cell.height-3,undefined,'FAST')}catch(e){}}}});
- const n=d.internal.getNumberOfPages();for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(...gris);d.text('Remisión '+r.remision+' · '+r.id+' · Página '+i+' de '+n,W-X,H-7,{align:'right'});d.text('Latamks Almacén · Servicio logístico MECAMEL',X,H-7)}
+ const fil=['Entrega (Latamks)','Recibe ('+r.cliente+')'];
+ d.autoTable({startY:y,margin:{left:X,right:X},head:[['','Nombre','Cédula','Firma','Fecha y hora']],body:fil.map(t=>[t,'','','','']),theme:'grid',
+  styles:{fontSize:8,cellPadding:2,minCellHeight:20,valign:'middle',lineColor:[150,158,175],lineWidth:.2,textColor:20},headStyles:{fillColor:[232,236,245],textColor:20,fontStyle:'bold',minCellHeight:7},
+  columnStyles:{0:{fontStyle:'bold',cellWidth:34},2:{cellWidth:30},3:{cellWidth:56},4:{cellWidth:30}}});
+ tcPdfPie(d,'Remisión '+r.remision+' · '+r.id);
  return d}
 ACT.tcPdf=v=>{const r=TD.find(x=>x.id===v);if(!r)return;try{const d=tcPdfDoc(r);const nom='Remision_'+r.remision+'_'+String(r.cliente).replace(/[^A-Za-z0-9]+/g,'_')+'_'+r.fecha+'.pdf';
  const u=d.output('bloburl');const w=window.open(u,'_blank');if(!w)saveFile(nom,d.output('blob'))}catch(e){console.error(e);toast('No se pudo generar el PDF: '+esc(e.message||e),'er')}};
+
+/* ---------- Inventario para imprimir, sin valores ---------- */
+ACT.tcInvPdf=(v,el)=>{if(el&&el.disabled)return;const f=U.f;const q=nrmH(f.tcQ||'');const solo=f.tcS!=='0';
+ const L=TI.filter(x=>(!solo||x.cantidad>0)&&(!q||nrmH(x.cod+' '+x.descripcion+' '+x.ubicacion).includes(q)));
+ if(!L.length){toast('No hay referencias para imprimir con ese filtro.','wa');return}
+ try{const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const X=12;const ahora=new Date();
+  const hora=String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
+  let y=tcPdfHead(d,'INVENTARIO EN BODEGA · MECAMEL','Servicio logístico de almacenamiento',[['Fecha de corte:',tcFdmy(HOY)],['Hora:',hora],['Referencias:',nf0.format(L.length)],['Propietario:','MECAMEL']]);
+  d.setFontSize(8);d.setTextColor(90,100,130);d.text((solo?'Referencias con saldo':'Todas las referencias')+(f.tcQ?' · filtro: «'+f.tcQ+'»':'')+'. La mercancía es propiedad de MECAMEL.',X,y);y+=4;d.setTextColor(20);
+  d.autoTable({startY:y,margin:{left:X,right:X},head:[['#','Código','Descripción','Unidad','Ubicación','Cantidad']],body:L.map((x,i)=>[i+1,x.cod,x.descripcion,x.um.toLowerCase(),x.ubicacion||'',tq(x.cantidad)]),theme:'grid',
+   styles:{fontSize:7.8,cellPadding:1.6,lineColor:[180,186,200],lineWidth:.15,textColor:20,valign:'middle'},headStyles:{fillColor:[36,52,107],textColor:255,fontStyle:'bold'},
+   columnStyles:{0:{cellWidth:10,halign:'center'},1:{cellWidth:36},3:{cellWidth:17},4:{cellWidth:24},5:{cellWidth:20,halign:'right'}}});
+  tcPdfPie(d,'Inventario MECAMEL al '+tcFdmy(HOY));
+  const u=d.output('bloburl');const w=window.open(u,'_blank');if(!w)saveFile('Inventario_MECAMEL_'+HOY+'.pdf',d.output('blob'))}
+ catch(e){console.error(e);toast('No se pudo generar el PDF: '+esc(e.message||e),'er')}};
 
 /* Estilos del módulo */
 document.head.insertAdjacentHTML('beforeend',`<style>
