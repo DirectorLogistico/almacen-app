@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.18.1 · bloque 6';
+const VERSION='4.19.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7130,7 +7130,7 @@ ACT.modDelGo=async(v,el)=>{await sbAccion(el,'Eliminando…',async()=>{const {er
    ===================================================================== */
 let TI=[],TM=[],TD=[],TE=[],TCD=null,TCE=null,TIM={};
 PERM['Auxiliar']=PERM['Auxiliar']==='*'?'*':[...new Set([...(PERM['Auxiliar']||[]),'terc.op'])];
-Object.assign(ACT_PERM,{tcInvPdf:'terc.op',tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcDesGo:'terc.op',tcDesEd:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
+Object.assign(ACT_PERM,{tcInvPdf:'terc.op',tcCarga:'terc.carga',tcEnt:'terc.op',tcEntGo:'terc.op',tcDes:'terc.op',tcFmm:'terc.op',tcFmmGo:'terc.op',tcFmmForm:'terc.op',tcDesGo:'terc.op',tcDesEd:'terc.op',tcAju:'terc.aju',tcAjuGo:'terc.aju',tcAnu:'terc.aju',tcAnuGo:'terc.aju',tcEd:'terc.op',tcEdGo:'terc.op'});
 const TC_ED=()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol);
 const nfU=new Intl.NumberFormat('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
 const usd=v=>'US$ '+nfU.format(+v||0);
@@ -7185,11 +7185,11 @@ function tcExis(){const f=U.f;const q=nrmH(f.tcQ||'');const solo=f.tcS!=='0';
 ACT.tcVerK=v=>{U.f.tcT='kar';U.f.tcK=v;rerender()};
 
 function tcDesp(){const L=TD;
- regT('tcdes','Remisiones de despacho MECAMEL',['Remisión','Fecha','Cliente','#','Código','Descripción','Unidad','Cantidad','Valor USD','Estado'],
-  L.flatMap(d=>d.lineas.map(l=>[d.remision,d.fecha,d.cliente,l.n,l.cod,l.desc,l.um,+l.q,+((+l.q)*(+l.costo_usd||0)).toFixed(2),d.estado])));
+ regT('tcdes','Remisiones de despacho MECAMEL',['Remisión','FMM Appolo','Fecha','Cliente','#','Código','Descripción','Unidad','Cantidad','Valor USD','Estado'],
+  L.flatMap(d=>d.lineas.map(l=>[d.remision,d.fmm||'',d.fecha,d.cliente,l.n,l.cod,l.desc,l.um,+l.q,+((+l.q)*(+l.costo_usd||0)).toFixed(2),d.estado])));
  return`<div class="card"><div class="ch"><div><h3>Remisiones de despacho</h3><p>Cada remisión descuenta del inventario de MECAMEL. Solo Gerencia la anula (la mercancía vuelve con un movimiento nuevo).</p></div><div class="acts">${xbtns('tcdes')}</div></div>
  ${L.length?`<div class="tw"><table class="t stkm"><thead><tr><th>Remisión</th><th>Fecha</th><th>Cliente</th><th>Referencias</th><th>Registró</th><th>Estado</th><th></th></tr></thead><tbody>${L.map(d=>`<tr${d.estado==='Anulado'?' style="opacity:.65"':''}>
-  <td class="nm"><b>${esc(d.remision)}</b><div class="sub">${esc(d.id)}</div></td><td data-l="Fecha">${fd(d.fecha)}</td><td data-l="Cliente">${esc(d.cliente)}</td>
+  <td class="nm"><b>${esc(d.remision)}</b><div class="sub">${d.fmm?'FMM '+esc(d.fmm):esc(d.id)}</div></td><td data-l="Fecha">${fd(d.fecha)}</td><td data-l="Cliente">${esc(d.cliente)}</td>
   <td data-l="Referencias">${d.lineas.length} · ${tq(d.lineas.reduce((s,l)=>s+(+l.q),0))} und<div class="sub">${usd(d.lineas.reduce((s,l)=>s+(+l.q)*(+l.costo_usd||0),0))}</div></td>
   <td data-l="Registró" class="sub">${esc(d.usuario||'')}</td>
   <td data-l="Estado">${d.estado==='Anulado'?`<span class="bd">Anulado</span><div class="sub">${esc(d.anulado_motivo)}</div>`:'<span class="bd ok">Despachado</span>'}${(d.hist||[]).length?`<div class="sub">Corregida ${(d.hist||[]).length} ${(d.hist||[]).length>1?'veces':'vez'}</div>`:''}</td>
@@ -7288,15 +7288,16 @@ ACT.tcEntGo=async(v,el)=>{tcEntLeer();const L=TCE.lineas.filter(l=>String(l.cod)
 
 /* ---------- Remisión de despacho ---------- */
 const tcSigRem=()=>{const n=TD.map(d=>(/^RM-(\d+)$/.exec(d.remision)||[])[1]).filter(Boolean).map(Number);return'RM-'+String((n.length?Math.max(...n):0)+1).padStart(4,'0')};
-ACT.tcDes=(v,el)=>{if(el&&el.disabled)return;TCD={rem:'',fecha:HOY,cli:'GARSITE',obs:'',lineas:[{cod:'',q:''}]};tcDesForm()};
-function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;TCD.obs=$('#tdO').value;if($('#tdM'))TCD.mot=$('#tdM').value;
+ACT.tcDes=(v,el)=>{if(el&&el.disabled)return;TCD={rem:'',fmm:'',fecha:HOY,cli:'GARSITE',obs:'',lineas:[{cod:'',q:''}]};tcDesForm()};
+function tcDesLeer(){if(!TCD||!$('#tdR'))return;TCD.rem=$('#tdR').value;TCD.fecha=$('#tdF').value;TCD.cli=$('#tdC').value;if($('#tdFm'))TCD.fmm=$('#tdFm').value;TCD.obs=$('#tdO').value;if($('#tdM'))TCD.mot=$('#tdM').value;
  document.querySelectorAll('[data-td]').forEach(e=>{const [i,k]=e.dataset.td.split('|');TCD.lineas[+i][k]=e.value})}
 const tcDisp=c=>{const x=TIM[c];return x?x.cantidad+((TCD&&TCD.orig&&TCD.orig[c])||0):0};
 function tcDesForm(){const L=TCD.lineas;const ed=!!TCD.id;
- modal(mh(ed?'Corregir remisión '+esc(TCD.remOrig):'Nueva remisión de despacho',ed?'Cambia códigos, cantidades o datos. Cada diferencia queda en el kárdex de MECAMEL como «Corrección» y la remisión guarda cómo estaba antes.':'Mercancía de MECAMEL que sale para el cliente. Descuenta del inventario de MECAMEL.')+`<datalist id="tcCods">${TI.filter(x=>tcDisp(x.cod)>0).map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(tcDisp(x.cod))}</option>`).join('')}</datalist>
+ modal(mh(ed?'Corregir remisión '+esc(TCD.remOrig):'Nueva remisión de despacho',ed?'Cambia códigos, cantidades o datos. Cada diferencia queda en el kárdex de MECAMEL como «Corrección» y la remisión guarda cómo estaba antes.':'Mercancía de MECAMEL que sale para el cliente. Descuenta del inventario de MECAMEL.')+(ed?'':`<label class="tcfmm"><input type="file" accept="application/pdf,.pdf" id="tcFmmF" hidden>${icon('upload',18)}<span><b>Cargar el FMM de Appolo (PDF)</b><small>La app lee las referencias y cantidades del FMM de salida y arma la remisión. Verás la vista previa antes de descontar.</small></span></label>`)+`<datalist id="tcCods">${TI.filter(x=>tcDisp(x.cod)>0).map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)} · ${tq(tcDisp(x.cod))}</option>`).join('')}</datalist>
  <div class="two"><div class="fld"><label for="tdR">N.º de remisión</label><input class="inp" id="tdR" maxlength="30" placeholder="${ed?'':'Automática: '+tcSigRem()}" value="${esc(TCD.rem)}"></div>
  <div class="fld"><label for="tdF">Fecha</label><input class="inp" id="tdF" type="date" max="${HOY}" value="${esc(TCD.fecha)}"></div>
- <div class="fld" style="grid-column:1/-1"><label for="tdC">Cliente</label><input class="inp" id="tdC" maxlength="60" value="${esc(TCD.cli)}"></div></div>
+ <div class="fld"><label for="tdC">Cliente</label><input class="inp" id="tdC" maxlength="60" value="${esc(TCD.cli)}"></div>
+ <div class="fld"><label for="tdFm">N.º FMM de Appolo</label><input class="inp" id="tdFm" maxlength="30" placeholder="Ej.: 928-000000" value="${esc(TCD.fmm||'')}"></div></div>
  <div class="lb" style="margin:12px 0 6px">Referencias que salen</div>
  ${L.map((l,i)=>`<div class="tcl"><span class="recn">${i+1}</span><input class="inp" data-td="${i}|cod" list="tcCods" placeholder="Código" value="${esc(l.cod)}"><input class="inp" data-td="${i}|q" type="number" min="0" step="any" inputmode="decimal" placeholder="Cantidad" value="${esc(l.q)}"><button class="ib" data-act="tcDeDel" data-v="${i}" aria-label="Quitar línea">${icon('trash',14)}</button><div class="tcx" id="tdx${i}">${tcDesInfo(i)}</div></div>`).join('')}
  <button class="btn ghost sm" data-act="tcDeAdd">${icon('plus',14)}Agregar referencia</button>
@@ -7305,11 +7306,12 @@ function tcDesForm(){const L=TCD.lineas;const ed=!!TCD.id;
  ${(TCD.hist||[]).length?`<div class="lb" style="margin:12px 0 6px">Correcciones anteriores</div><div class="sub" style="line-height:1.6">${TCD.hist.slice().reverse().map(h=>`${esc(h.f)} · ${esc(h.u)} · ${esc(h.motivo)}<br><span style="opacity:.8">Antes: ${esc(h.antes.remision)} · ${(h.antes.lineas||[]).map(l=>esc(l.cod)+' × '+tq(l.q)).join(', ')}</span>`).join('<br>')}</div>`:''}`:''}
  <div class="note" style="margin-top:12px">${icon('info',16)}<span>Los nombres y las firmas de <b>quien entrega</b> y <b>quien recibe</b> quedan en blanco en la remisión: se llenan a mano en la remisión impresa al entregar la mercancía.</span></div>
  <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="tcDesGo">${ed?icon('check',16)+'Guardar corrección':icon('truck',16)+'Despachar y generar remisión'}</button></div>`,'w');
+ const ff=$('#tcFmmF');if(ff)ff.addEventListener('change',()=>{const f=ff.files&&ff.files[0];if(f){tcDesLeer();tcFmmLeer(f)}});
  document.querySelectorAll('[data-td$="|cod"],[data-td$="|q"]').forEach(e=>e.addEventListener('input',()=>{const i=e.dataset.td.split('|')[0];tcDesLeer();const z=$('#tdx'+i);if(z)z.innerHTML=tcDesInfo(+i)}))}
 function tcDesInfo(i){const l=TCD.lineas[i];const c=String(l.cod).trim().toUpperCase();const x=TIM[c];const mal=x&&+numIn(l.q)>tcDisp(c);
  return x?`<span class="sub"${mal?' style="color:var(--er,#c0392b)"':''}>${esc(x.descripcion)} · hay ${tq(tcDisp(c))} ${esc(x.um.toLowerCase())}${mal?' · no alcanza':''}</span>`:c?`<span class="sub" style="color:var(--er,#c0392b)">Ese código no está en el inventario de MECAMEL</span>`:''}
 ACT.tcDesEd=(v,el)=>{if(el&&el.disabled)return;const d=TD.find(x=>x.id===v);if(!d||d.estado==='Anulado')return;const orig={};d.lineas.forEach(l=>orig[l.cod]=(orig[l.cod]||0)+(+l.q));
- TCD={id:d.id,remOrig:d.remision,rem:d.remision,fecha:d.fecha,cli:d.cliente,obs:d.observaciones||'',mot:'',orig,hist:d.hist||[],lineas:d.lineas.map(l=>({cod:l.cod,q:String(+l.q)}))};tcDesForm()};
+ TCD={id:d.id,remOrig:d.remision,rem:d.remision,fmm:d.fmm||'',fecha:d.fecha,cli:d.cliente,obs:d.observaciones||'',mot:'',orig,hist:d.hist||[],lineas:d.lineas.map(l=>({cod:l.cod,q:String(+l.q)}))};tcDesForm()};
 ACT.tcDeAdd=()=>{tcDesLeer();TCD.lineas.push({cod:'',q:''});tcDesForm()};
 ACT.tcDeDel=v=>{tcDesLeer();TCD.lineas.splice(+v,1);if(!TCD.lineas.length)TCD.lineas.push({cod:'',q:''});tcDesForm()};
 ACT.tcDesGo=async(v,el)=>{tcDesLeer();const L=TCD.lineas.filter(l=>String(l.cod).trim()).map(l=>({cod:String(l.cod).trim().toUpperCase(),q:numIn(l.q)}));
@@ -7319,11 +7321,89 @@ ACT.tcDesGo=async(v,el)=>{tcDesLeer();const L=TCD.lineas.filter(l=>String(l.cod)
  const pas=L.find(l=>l.q>tcDisp(l.cod));if(pas){toast(`No alcanza ${esc(pas.cod)}: hay ${tq(tcDisp(pas.cod))}.`,'er');return}
  if(L.some((l,i)=>L.findIndex(z=>z.cod===l.cod)!==i)){toast('Hay una referencia repetida: déjala en una sola línea.','er');return}
  if(TCD.id){if(String(TCD.mot||'').trim().length<4){toast('Escribe el motivo de la corrección.','er');$('#tdM').focus();return}
-  await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despacho_editar',{p:{id:TCD.id,remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,motivo:TCD.mot.trim()}});if(error)throw error;
+  await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despacho_editar',{p:{id:TCD.id,fmm:(TCD.fmm||'').trim(),remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,motivo:TCD.mot.trim()}});if(error)throw error;
    TCD=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} corregida (${data.movimientos} movimiento${data.movimientos===1?'':'s'} en el kárdex).`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)});return}
  if(!TCD.tok)TCD.tok='td'+Date.now()+Math.random().toString(36).slice(2,8);
- await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,tok:TCD.tok}});if(error)throw error;
+ await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{fmm:(TCD.fmm||'').trim(),remision:TCD.rem.trim(),fecha:TCD.fecha,cliente:TCD.cli.trim(),obs:TCD.obs,lineas:L,tok:TCD.tok}});if(error)throw error;
   TCD=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} despachada.`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)})};
+
+/* ---------- Remisión desde el FMM de Appolo (PDF) ---------- */
+/* Lector del FMM de Appolo (PDF con texto). pages: [{w,h,items:[{str,x,y}]}] (y hacia arriba, como pdf.js) */
+function fmmParse(pages,codigos){
+ const num=s=>{const v=parseFloat(String(s).replace(/[$\s]/g,'').replace(/,/g,''));return isNaN(v)?null:v};
+ const lines=[];let refMax=null;
+ pages.forEach((pg,pi)=>{const its=pg.items.filter(i=>String(i.str).trim());if(!its.length)return;
+  const hs=its.map(i=>i.h||8).sort((a,b)=>a-b);const tol=Math.max(1.5,(hs[Math.floor(hs.length/2)]||8)*.45);
+  const sorted=its.slice().sort((a,b)=>b.y-a.y||a.x-b.x);const G=[];
+  sorted.forEach(i=>{const g=G.find(g=>Math.abs(g.y-i.y)<=tol);if(g){g.it.push(i);g.y=(g.y*g.n+i.y)/(g.n+1);g.n++}else G.push({y:i.y,n:1,it:[i]})});
+  G.sort((a,b)=>b.y-a.y).forEach(g=>{g.it.sort((a,b)=>a.x-b.x);const t=g.it.map(i=>String(i.str).trim()).join(' ').replace(/\s+/g,' ');
+   const emb=g.it.find(i=>/^Embalaje$/i.test(String(i.str).trim()));if(emb)refMax=emb.x-1;
+   lines.push({p:pi,y:g.y,t,it:g.it,refMax})})});
+ const RX=/([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([A-ZÁÉÍÓÚÑ]+(?:\s[A-ZÁÉÍÓÚÑ]+)?)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)\s+\$\s*([\d.,]+)\s*$/;
+ const frag=l=>{if(l.refMax==null)return'';const s=l.it.filter(i=>i.x<l.refMax).map(i=>String(i.str).trim()).join('');
+  return /^[A-Z0-9][A-Z0-9._\/-]*$/.test(s)?s:''};
+ const rows=[];lines.forEach((l,i)=>{const m=l.t.match(RX);if(m&&l.refMax!=null)rows.push({i,l,m})});
+ /* documentos dentro del PDF: cada «Formulario de Movimiento de Mercancías N» y sus páginas de continuación */
+ const docs=[];let cur=null;const pagN=pages.length;
+ for(let p=0;p<pagN;p++){const L=lines.filter(l=>l.p===p);if(!L.length){cur=null;continue}
+  const h=L.map(l=>l.t.match(/Formulario de Movimiento de Mercanc[ií]as\s+(\d{3}-\d{4,})/i)).find(Boolean);
+  if(h){cur={fmm:h[1],pags:[p]};docs.push(cur)}
+  else if(cur&&L.some(l=>RX.test(l.t)||/^Subpartida/i.test(l.t)))cur.pags.push(p);else cur=null}
+ docs.forEach(d=>{const t=lines.filter(l=>l.p===d.pags[0]).map(l=>l.t).join('\n');
+  const dm=(t.match(/Fecha Ejec\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i)||t.match(/Fecha Emisi[oó]n\s*:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i));
+  d.fecha=dm?`${dm[3]}-${dm[2].padStart(2,'0')}-${dm[1].padStart(2,'0')}`:'';
+  d.usuario=((t.match(/Usuario\s*:\s*(.+?)(?:\s+Tipo Usuario|$)/im)||[])[1]||'').trim();
+  d.destino=((t.match(/Usuario Destino[ ]*:[ ]*(.*?)(?:[ ]*Peso Neto|$)/im)||[])[1]||'').trim()||((t.match(/^[ ]*Cliente[ ]*:[ ]*(.+?)(?:[ ]+[\d.]+[ ]*$|$)/im)||[])[1]||'').trim();
+  d.operacion=((t.match(/(Operaci[oó]n de [A-Za-zÁÉÍÓÚáéíóú ]+)/)||[])[1]||'').trim();
+  d.estado=((t.match(/\b(EJECUTADO|APROBADO|ANULADO|RADICADO|EN TRAMITE)\b/)||[])[1]||'')});
+ const set=new Set((codigos||[]).map(c=>String(c).toUpperCase()));
+ const leer=d=>rows.filter(r=>d.pags.includes(r.l.p)).map((r,k,RR)=>{const L=r.l,prevRow=k>0?RR[k-1].i:-1,nextRow=k<RR.length-1?RR[k+1].i:lines.length;
+  const same=frag(L);const above=[],below=[];
+  for(let j=r.i-1;j>prevRow&&j>=r.i-4;j--){if(lines[j].p!==L.p)break;const f=frag(lines[j]);if(f)above.unshift(f)}
+  for(let j=r.i+1;j<nextRow&&j<=r.i+4;j++){if(lines[j].p!==L.p)break;const f=frag(lines[j]);if(f)below.push(f)}
+  /* los fragmentos de abajo que empiezan otra referencia (están justo encima de la fila siguiente) no son de esta fila */
+  const cands=[];const A=above.join(''),B=below.join('');
+  [A+same+B,A+same,same+B,A+(below[0]||''),A,same,(above.slice(-1)[0]||'')+same+(below[0]||'')].forEach(c=>{if(c&&!cands.includes(c))cands.push(c)});
+  const ok=cands.find(c=>set.has(c.toUpperCase()));
+  return{ref:(ok||cands[0]||'').toUpperCase(),encontrada:!!ok,cands,um:r.m[5],q:num(r.m[3]),qp:num(r.m[4]),vu:num(r.m[6]),pag:L.p+1}});
+ docs.forEach(d=>{d.lineas=leer(d)});
+ const sal=docs.find(d=>/salida/i.test(d.operacion)&&/LATAMKS/i.test(d.usuario))||docs.find(d=>/LATAMKS/i.test(d.usuario))||docs[0]||null;
+ return{docs,doc:sal,paginasSinTexto:pages.filter(p=>!p.items.some(i=>String(i.str).trim())).length}}
+let TFM=null;
+function tcPdfJs(){if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);const V='3.11.174';
+ return new Promise((ok,ko)=>{const sc=document.createElement('script');sc.src=`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${V}/pdf.min.js`;
+  sc.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc=`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${V}/pdf.worker.min.js`;ok(window.pdfjsLib)}catch(e){ko(e)}};
+  sc.onerror=()=>ko(new Error('No se pudo cargar el lector de PDF (revisa la conexión a internet)'));document.head.appendChild(sc)})}
+async function tcFmmLeer(f){toast('Leyendo el FMM…');
+ try{if(f.size>25*1024*1024)throw new Error('El PDF pesa más de 25 MB');const lib=await tcPdfJs();const pdf=await lib.getDocument({data:await f.arrayBuffer()}).promise;const pages=[];
+  for(let n=1;n<=pdf.numPages;n++){const pg=await pdf.getPage(n);const vp=pg.getViewport({scale:1});const tc=await pg.getTextContent();
+   pages.push({w:vp.width,h:vp.height,items:tc.items.filter(i=>i&&i.str!=null).map(i=>({str:i.str,x:i.transform[4],y:i.transform[5],h:i.height||Math.abs(i.transform[3])||8}))})}
+  tcFmmDesdePaginas(pages,f.name)}catch(e){console.error(e);toast('No se pudo leer el PDF: '+esc(e.message||e),'er')}}
+function tcFmmDesdePaginas(pages,nombre){const r=fmmParse(pages,TI.map(x=>x.cod));
+ if(!r.doc||!r.doc.lineas.length){toast(r.paginasSinTexto===pages.length?'El PDF no tiene texto (parece escaneado): descárgalo de Appolo como PDF, no como foto.':'No encontré la «Descripción de la Mercancía» de un FMM en ese PDF.','er');return}
+ TFM={archivo:nombre,docs:r.docs,i:r.docs.indexOf(r.doc)};tcFmmPrev()}
+function tcFmmAgr(){const d=TFM.docs[TFM.i];const A=[];d.lineas.forEach((l,k)=>{const cod=(TFM.fix&&TFM.fix[k])||l.ref;const a=A.find(x=>x.cod===cod);if(a){a.q+=l.q;a.fil.push(k+1)}else A.push({cod,q:l.q,um:l.um,fil:[k+1],ok:!!TIM[cod],k})});return A}
+function tcFmmPrev(){const d=TFM.docs[TFM.i];const A=tcFmmAgr();const malC=A.filter(a=>!TIM[a.cod]),malQ=A.filter(a=>TIM[a.cod]&&a.q>TIM[a.cod].cantidad+1e-9);
+ const usado=TD.find(x=>x.fmm===d.fmm&&x.estado!=='Anulado');const sal=/salida/i.test(d.operacion);const okAll=!malC.length&&!malQ.length&&!usado;
+ modal(mh('FMM '+esc(d.fmm)+' · vista previa','Revisa las referencias y cantidades que salen. Al crear la remisión se descuentan del inventario de MECAMEL.')+`<datalist id="tcCodsF">${TI.map(x=>`<option value="${esc(x.cod)}">${esc(x.descripcion)}</option>`).join('')}</datalist>
+ ${TFM.docs.length>1?`<div class="fld" style="margin-bottom:10px"><label for="tfDoc">El PDF trae ${TFM.docs.length} formularios: escoge el de salida</label><select class="sel" id="tfDoc">${TFM.docs.map((x,i)=>`<option value="${i}" ${i===TFM.i?'selected':''}>${esc(x.fmm)} · ${esc(x.usuario)} · ${esc(x.operacion||'')}</option>`).join('')}</select></div>`:''}
+ <div class="kv"><span>FMM</span><b>${esc(d.fmm)}${d.estado?' · '+esc(d.estado):''}</b><span>Fecha</span><b>${d.fecha?tcFdmy(d.fecha):'—'}</b><span>Usuario</span><b>${esc(d.usuario||'—')}</b><span>Destino</span><b>${esc(d.destino||'—')}</b><span>Operación</span><b>${esc(d.operacion||'—')}</b><span>Referencias</span><b>${A.length} · ${tq(A.reduce((s,a)=>s+a.q,0))} und y metros</b></div>
+ ${!sal?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Este formulario no es de <b>salida</b>. Revisa que sea el FMM correcto.</span></div>`:''}
+ ${usado?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Este FMM ya está en la remisión <b>${esc(usado.remision)}</b>. No se puede usar dos veces.</span></div>`:''}
+ ${malC.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>${malC.length} referencia(s) no están en el inventario de MECAMEL: escribe el código correcto en la casilla roja.</span></div>`:''}
+ ${malQ.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>${malQ.length} referencia(s) no alcanzan en la existencia de la app. Revisa el inventario o haz el ajuste antes de despachar.</span></div>`:''}
+ <div class="tw" style="max-height:330px;overflow:auto;margin-top:10px"><table class="t"><thead><tr><th>#</th><th>Código</th><th>Descripción</th><th class="r">Cantidad</th><th class="r">Existencia</th><th>Estado</th></tr></thead><tbody>${A.map((a,i)=>{const x=TIM[a.cod];const no=x&&a.q>x.cantidad+1e-9;
+  return`<tr><td class="sub">${i+1}${a.fil.length>1?`<div class="sub">filas ${a.fil.join('+')}</div>`:''}</td><td>${x?`<b>${esc(a.cod)}</b>`:`<input class="inp" style="border-color:var(--er,#c0392b);min-width:170px" data-tfk="${a.k}" list="tcCodsF" value="${esc(a.cod)}">`}</td><td>${x?esc(x.descripcion):'<span class="sub">—</span>'}</td>
+  <td class="num"><b>${tq(a.q)}</b> <span class="sub">${esc(String(a.um||'').toLowerCase())}</span></td><td class="num">${x?tq(x.cantidad):'—'}</td><td>${!x?'<span class="bd">No está</span>':no?'<span class="bd wa">No alcanza</span>':'<span class="bd ok">OK</span>'}</td></tr>`}).join('')}</tbody></table></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn ghost" data-act="tcFmmForm">Revisar en el formulario</button><button class="btn" data-act="tcFmmGo" ${okAll?'':'disabled'}>${icon('truck',16)}Crear remisión y descontar</button></div>`,'w');
+ const sd=$('#tfDoc');if(sd)sd.addEventListener('change',()=>{TFM.i=+sd.value;TFM.fix={};tcFmmPrev()});
+ document.querySelectorAll('[data-tfk]').forEach(e=>e.addEventListener('change',()=>{TFM.fix=TFM.fix||{};const v=e.value.trim().toUpperCase();TFM.docs[TFM.i].lineas.forEach((l,k)=>{if(l.ref===TFM.docs[TFM.i].lineas[+e.dataset.tfk].ref)TFM.fix[k]=v});tcFmmPrev()}))}
+function tcFmmATCD(){const d=TFM.docs[TFM.i];const A=tcFmmAgr();const base=TCD||{rem:'',obs:''};
+ TCD={rem:base.rem||'',fmm:d.fmm,fecha:d.fecha&&d.fecha<=HOY?d.fecha:HOY,cli:(d.destino||'GARSITE').toUpperCase(),obs:base.obs||('Según FMM '+d.fmm+' de Appolo'),lineas:A.map(a=>({cod:a.cod,q:String(+a.q.toFixed(3))}))}}
+ACT.tcFmmForm=()=>{tcFmmATCD();TFM=null;tcDesForm()};
+ACT.tcFmmGo=async(v,el)=>{if(el&&el.disabled)return;tcFmmATCD();const L=TCD.lineas.map(l=>({cod:l.cod,q:+l.q}));TCD.tok='tf'+Date.now()+Math.random().toString(36).slice(2,8);
+ await sbAccion(el,'Despachando…',async()=>{const {data,error}=await SB.rpc('alm_terc_despachar',{p:{fmm:TCD.fmm,remision:'',fecha:TCD.fecha,cliente:TCD.cli,obs:TCD.obs,lineas:L,tok:TCD.tok}});if(error)throw error;
+  TCD=null;TFM=null;await cargarDatos();closeModal();U.f.tcT='des';rerender();toast(`Remisión ${esc(data.remision)} creada desde el FMM y descontada del inventario.`,'ok');setTimeout(()=>ACT.tcPdf(data.id),300)})};
 
 /* ---------- Anular remisión (solo Gerencia) ---------- */
 ACT.tcAnu=(v,el)=>{if(el&&el.disabled)return;const d=TD.find(x=>x.id===v);if(!d)return;
@@ -7339,14 +7419,14 @@ function tcPdfHead(d,tit,sub,kv){const W=d.internal.pageSize.getWidth(),X=12,AW=
  const cx=tx+(W-X-56-tx)/2;d.line(W-X-56,y,W-X-56,y+24);d.setTextColor(20);d.setFont('helvetica','bold');d.setFontSize(12);d.text(tit,cx,y+8,{align:'center'});
  d.setFont('helvetica','normal');d.setFontSize(8.5);d.text(sub,cx,y+13.5,{align:'center'});
  d.setFontSize(7.5);d.setTextColor(...gris);d.text('LATAMKS S.A.S. · Zona Franca La Cayena, Barranquilla',cx,y+18.5,{align:'center'});
- d.setTextColor(20);d.setFontSize(8);kv.forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-54,y+5.5+i*5);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-29,y+5.5+i*5)});
+ d.setTextColor(20);d.setFontSize(8);const st=kv.length>4?4.2:5;kv.forEach((l,i)=>{d.setFont('helvetica','bold');d.text(l[0],W-X-54,y+4.8+i*st);d.setFont('helvetica','normal');d.text(String(l[1]),W-X-29,y+4.8+i*st)});
  return y+29}
 const tcFdmy=f=>String(f).split('-').reverse().join('/');
 function tcPdfPie(d,txt){const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight();const n=d.internal.getNumberOfPages();
  for(let i=1;i<=n;i++){d.setPage(i);d.setFontSize(7.5);d.setTextColor(90,100,130);d.text(txt+' · Página '+i+' de '+n,W-12,H-7,{align:'right'});d.text('Latamks Almacén · Servicio logístico MECAMEL',12,H-7)}}
 function tcPdfDoc(r){const {jsPDF}=window.jspdf;const d=new jsPDF({unit:'mm',format:'letter'});const W=d.internal.pageSize.getWidth(),H=d.internal.pageSize.getHeight(),X=12,AW=W-24;
  const azul=[36,52,107],gris=[90,100,130];
- let y=tcPdfHead(d,'REMISIÓN DE DESPACHO','Servicio logístico de almacenamiento y despacho',[['Remisión N.º:',r.remision],['Fecha:',tcFdmy(r.fecha)],['Cliente:',r.cliente],['Propietario:','MECAMEL']]);
+ let y=tcPdfHead(d,'REMISIÓN DE DESPACHO','Servicio logístico de almacenamiento y despacho',[['Remisión N.º:',r.remision],...(r.fmm?[['FMM Appolo:',r.fmm]]:[]),['Fecha:',tcFdmy(r.fecha)],['Cliente:',r.cliente],['Propietario:','MECAMEL']]);
  if(r.estado==='Anulado'){d.setFontSize(9);d.setTextColor(180,30,30);d.setFont('helvetica','bold');d.text('ANULADA · '+(r.anulado_motivo||''),X,y);d.setFont('helvetica','normal');d.setTextColor(20);y+=5}
  d.setFontSize(8);d.setTextColor(...gris);d.text('La mercancía es propiedad de MECAMEL. Latamks presta el servicio de almacenamiento y despacho.',X,y);y+=4;d.setTextColor(20);
  d.autoTable({startY:y,margin:{left:X,right:X},head:[['# Ítem','Código','Descripción','Unidad','Cantidad']],body:r.lineas.map(l=>[l.n,l.cod,l.desc,String(l.um||'').toLowerCase(),tq(l.q)]),theme:'grid',
@@ -7387,6 +7467,8 @@ document.head.insertAdjacentHTML('beforeend',`<style>
 .tcpad{position:relative;margin-top:6px;border:1.5px dashed var(--line,#cfd6e4);border-radius:12px;background:#fff}
 .tcpad canvas{width:100%;height:130px;display:block;touch-action:none;border-radius:12px}
 .tcpad span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa3b5;font-size:13px;pointer-events:none}
+label.tcfmm{display:flex;gap:12px;align-items:center;border:1.5px dashed var(--line,#cfd6e4);border-radius:14px;padding:12px 14px;margin-bottom:14px;cursor:pointer;color:var(--ink,#24346B)}
+label.tcfmm:hover{background:rgba(29,74,158,.05)}label.tcfmm span{display:flex;flex-direction:column;gap:2px}label.tcfmm small{color:#7b86a0;font-size:12px}
 @media(max-width:640px){.tcl{grid-template-columns:24px 1fr 90px 32px}.tcl .tcn{grid-template-columns:1fr}}
 </style>`);
 
