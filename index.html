@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.19.0 · bloque 6';
+const VERSION='4.20.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7567,6 +7567,71 @@ function srParts(g){return withTK(g,()=>{const out=[];const add=(geo,o)=>out.pus
 function srRegistrar(){(S&&S.modelos||[]).forEach(m=>{if(m.tipo==='Semirremolque'){const g=srGeo(m);GEO[m.id]=g;m.L=g.L;m.sc=+((g.bt+g.bb)/1.652).toFixed(3)}})}
 {const _gp=geoParts;geoParts=function(g){return g&&g.sr?srParts(g):_gp(g)}}
 {const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);try{srRegistrar()}catch(e){console.error(e)}return r}}
+
+/* =====================================================================
+   v4.20.0 · Nueva OC desde la orden de compra de Siesa (PDF)
+   En «Nueva orden de compra», el recuadro «Cargar OC de Siesa (PDF)» lee el
+   PDF tal como sale de Siesa: número, fecha, proveedor y NIT, y cada ítem con
+   su cantidad, precio unitario e IVA. Los ítems se emparejan con Materiales
+   por el número de Item de Siesa (o por el código). Con vista previa; al
+   confirmar crea la OC en la app (pendiente). NO suma inventario: la entrada
+   se registra a mano cuando llega la mercancía (decisión 79).
+   Usa el lector de PDF de app_terceros (tcPdfJs) y la función alm_oc_crear.
+   ===================================================================== */
+/* Lector de la orden de compra de Siesa (PDF con texto). pages: [{items:[{str,x,y,h}]}] (y hacia arriba, como pdf.js) */
+function ocSiesaLineas(pages){const out=[];pages.forEach((pg,pi)=>{const its=pg.items.filter(i=>String(i.str).trim());if(!its.length)return;
+ const hs=its.map(i=>i.h||8).sort((a,b)=>a-b);const tol=Math.max(1.5,(hs[Math.floor(hs.length/2)]||8)*.45);const G=[];
+ its.slice().sort((a,b)=>b.y-a.y||a.x-b.x).forEach(i=>{const g=G.find(g=>Math.abs(g.y-i.y)<=tol);if(g){g.it.push(i);g.y=(g.y*g.n+i.y)/(g.n+1);g.n++}else G.push({y:i.y,n:1,it:[i]})});
+ G.sort((a,b)=>b.y-a.y).forEach(g=>{g.it.sort((a,b)=>a.x-b.x);out.push(g.it.map(i=>String(i.str).trim()).join(' ').replace(/\s+/g,' ').trim())})});return out}
+function ocSiesaParse(pages){const L=ocSiesaLineas(pages);const T=L.join('\n');
+ const nco=s=>{const v=parseFloat(String(s).replace(/[$\s]/g,'').replace(/\./g,'').replace(',','.'));return isNaN(v)?null:v};
+ const num=((T.match(/N[úu]mero:\s*([0-9A-Z][0-9A-Z \-]*?\d)(?=\s{1,}[A-Za-z]|\s*$)/m)||[])[1]||'').replace(/\s+/g,'');
+ const fm=T.match(/Fecha:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/);const fecha=fm?`${fm[3]}-${fm[2].padStart(2,'0')}-${fm[1].padStart(2,'0')}`:'';
+ const pm=T.match(/Proveedor:\s*([\d.]+-?\d?)\s+(.+?)\s+Comprador:/);const nit=pm?pm[1].replace(/\./g,''):'';const prov=pm?pm[2].trim():'';
+ const moneda=((T.match(/Moneda:\s*([A-Z]{3})/)||[])[1]||'');const pago=((T.match(/Forma de pago:\s*(.+?)(?:\s+Moneda:|$)/m)||[])[1]||'').trim();
+ const obs=((T.match(/Observaci[oó]n:[ \t]*(.*)$/m)||[])[1]||'').trim();
+ const tot=T.match(/Total\s*\n?\s*\$\s?[\d.,]+\s+\$\s?[\d.,]+\s+\$\s?[\d.,]+\s+\$\s?[\d.,]+\s+\$\s?([\d.,]+)\s+\$\s?([\d.,]+)/);
+ const RX=/^(\d{3,12})\s+(.+?)\s+(\S+)\s+([A-ZÑa-zñ.]{1,8})\s+([\d.]+,\d+)\s+\$\s?([\d.]+,\d+)\s+([\d.]+,\d+)\s+\$\s?([\d.]+,\d+)\s+\$\s?([\d.]+,\d+)$/;
+ const lineas=[];L.forEach(t=>{const m=t.match(RX);if(m)lineas.push({item:m[1],desc:m[2],bod:m[3],um:m[4],q:nco(m[5]),pu:nco(m[6]),iva:nco(m[7]),dto:nco(m[8]),total:nco(m[9])})});
+ return{num,fecha,nit,prov,moneda,pago,obs,impuestos:tot?nco(tot[1]):null,total:tot?nco(tot[2]):null,lineas,esOC:/ORDEN DE COMPRA/i.test(T)}}
+let OSI=null;
+Object.assign(ACT_PERM,{osiGo:'oc.new'});
+const osiItem=s=>String(s||'').replace(/^0+/,'');
+function osiMat(item){const k=osiItem(item);if(!k)return null;return S.mats.find(m=>m.activo!==false&&osiItem(m.item)===k)||S.mats.find(m=>osiItem(m.cod)===k)||null}
+{const _no=newOC;newOC=function(pre){_no(pre);const box=$('#modal .mh');if(!box||$('#osiF'))return;
+ box.insertAdjacentHTML('afterend',`<label class="tcfmm"><input type="file" accept="application/pdf,.pdf" id="osiF" hidden>${icon('upload',18)}<span><b>Cargar OC de Siesa (PDF)</b><small>La app lee el número, el proveedor, el NIT y los ítems de la OC de Siesa y crea la OC aquí. No suma inventario: la entrada se hace cuando llega la mercancía.</small></span></label>`);
+ $('#osiF').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)osiLeer(f)})}}
+async function osiLeer(f){toast('Leyendo la OC de Siesa…');
+ try{if(f.size>15*1024*1024)throw new Error('El PDF pesa más de 15 MB');const lib=await tcPdfJs();const pdf=await lib.getDocument({data:await f.arrayBuffer()}).promise;const pages=[];
+  for(let n=1;n<=pdf.numPages;n++){const pg=await pdf.getPage(n);const tc=await pg.getTextContent();pages.push({items:tc.items.filter(i=>i&&i.str!=null).map(i=>({str:i.str,x:i.transform[4],y:i.transform[5],h:i.height||Math.abs(i.transform[3])||8}))})}
+  osiDesdePaginas(pages,f.name)}catch(e){console.error(e);toast('No se pudo leer el PDF: '+esc(e.message||e),'er')}}
+function osiDesdePaginas(pages,nombre){const r=ocSiesaParse(pages);
+ if(!r.esOC||!r.lineas.length){toast(pages.every(p=>!p.items.some(i=>String(i.str).trim()))?'El PDF no tiene texto (parece escaneado): descárgalo de Siesa como PDF.':'No encontré los ítems de una orden de compra de Siesa en ese PDF.','er');return}
+ OSI={...r,archivo:nombre,fix:{}};osiPrev()}
+function osiFilas(){return OSI.lineas.map((l,k)=>{const m=OSI.fix[k]?MI[OSI.fix[k]]:osiMat(l.item);const pu=l.dto>0&&l.q>0?+(l.total/l.q).toFixed(4):l.pu;return{...l,k,m,cod:m?m.cod:'',puNeto:pu}})}
+function osiPrev(){const F=osiFilas();const malC=F.filter(f=>!f.m);const dup=F.filter((f,i)=>f.cod&&F.findIndex(z=>z.cod===f.cod)!==i);
+ const ivas=[...new Set(F.map(f=>+f.iva||0))];const iva=ivas.length===1&&[0,19].includes(ivas[0])?ivas[0]:null;
+ const ya=S.ocs.find(o=>o.estado!=='Anulada'&&String(o.ref||'').replace(/\s+/g,'').toUpperCase()===OSI.num.toUpperCase());
+ const sub=F.reduce((s,f)=>s+f.q*f.puNeto,0);const ok=!malC.length&&!dup.length&&iva!=null&&!ya&&!!OSI.prov;
+ modal(mh('OC de Siesa '+esc(OSI.num||'')+' · vista previa','Revisa los datos. Al crear, la OC queda pendiente en la app; no suma inventario hasta registrar la entrada cuando llegue la mercancía.')+`<datalist id="osiCods">${S.mats.filter(m=>m.activo!==false).map(m=>`<option value="${esc(m.cod)}">${esc(m.desc)}${m.item?' · item '+esc(m.item):''}</option>`).join('')}</datalist>
+ <div class="kv"><span>OC Siesa</span><b>${esc(OSI.num||'—')}</b><span>Fecha</span><b>${OSI.fecha?fd(OSI.fecha):'—'}</b><span>Proveedor</span><b>${esc(OSI.prov||'—')}</b><span>NIT</span><b>${esc(OSI.nit||'—')}</b><span>Forma de pago</span><b>${esc(OSI.pago||'—')}</b><span>IVA</span><b>${iva==null?'mixto o no válido':iva===19?'Con IVA 19 %':'Sin IVA'}</b><span>Subtotal</span><b>${money(sub)}</b><span>Total Siesa</span><b>${OSI.total!=null?money(OSI.total):'—'}</b></div>
+ ${ya?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Esta OC de Siesa ya está cargada en la app como <b>${esc(ya.id)}</b>.</span></div>`:''}
+ ${OSI.moneda&&OSI.moneda!=='COP'?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>La OC está en <b>${esc(OSI.moneda)}</b>: la app guarda los precios en pesos. Revisa los precios antes de crearla.</span></div>`:''}
+ ${iva==null?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Los ítems tienen IVA distinto (${ivas.join(' %, ')} %). La app maneja una OC con IVA 0 % o 19 %: créala a mano o divídela en Siesa.</span></div>`:''}
+ ${malC.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>${malC.length} ítem(s) no están en Materiales: escribe el código de la app en la casilla roja, o créalo primero en Materiales.</span></div>`:''}
+ ${dup.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Hay ítems repetidos con el mismo código. Únelos en Siesa o corrige el código.</span></div>`:''}
+ <div class="tw" style="max-height:300px;overflow:auto;margin-top:10px"><table class="t"><thead><tr><th>Item Siesa</th><th>Código app</th><th>Descripción</th><th class="r">Cantidad</th><th class="r">Precio unit.</th><th class="r">Valor</th><th>Estado</th></tr></thead><tbody>${F.map(f=>`<tr>
+  <td class="nm"><b>${esc(f.item)}</b><div class="sub">${esc(f.desc)}</div></td>
+  <td>${f.m?`<b>${esc(f.cod)}</b>`:`<input class="inp" style="border-color:var(--er,#c0392b);min-width:160px" data-osik="${f.k}" list="osiCods" placeholder="Código de la app" value="${esc(OSI.fix[f.k]||'')}">`}</td>
+  <td>${f.m?esc(f.m.desc):'<span class="sub">—</span>'}</td><td class="num"><b>${qf(f.q)}</b> <span class="sub">${esc(String(f.um).toLowerCase())}</span></td>
+  <td class="num">${money(f.puNeto)}${f.dto>0?'<div class="sub">con descuento</div>':''}</td><td class="num">${money(f.q*f.puNeto)}</td><td>${f.m?'<span class="bd ok">OK</span>':'<span class="bd">No está</span>'}</td></tr>`).join('')}</tbody></table></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="osiGo" ${ok?'':'disabled'}>${icon('check',16)}Crear OC en la app</button></div>`,'w');
+ document.querySelectorAll('[data-osik]').forEach(e=>e.addEventListener('change',()=>{const v=e.value.trim().toUpperCase();if(v&&!MI[v]){toast('El código '+esc(v)+' no existe en Materiales.','er');return}OSI.fix[+e.dataset.osik]=v;setTimeout(osiPrev,0)}));
+ OSI.iva=iva}
+ACT.osiGo=async(v,el)=>{if(el&&el.disabled||!OSI)return;const F=osiFilas();
+ const p={prov:OSI.prov,nit:OSI.nit,fecha:OSI.fecha&&OSI.fecha<=HOY?OSI.fecha:HOY,ref:OSI.num,iva:OSI.iva,obs:('Cargada desde la OC de Siesa '+OSI.num+(OSI.pago?' · '+OSI.pago:'')+(OSI.obs?' · '+OSI.obs:'')).slice(0,300),lineas:F.map(f=>({cod:f.cod,ped:f.q,pu:f.puNeto}))};
+ await sbAccion(el,'Creando…',async()=>{const {data,error}=await SB.rpc('alm_oc_crear',{p});if(error)throw error;OSI=null;
+  await cargarDatos();closeModal();U.view='oc';rerender();toast(`${esc(data.id)} creada desde la OC de Siesa ${esc(p.ref)} (${F.length} ítems). Queda pendiente de recibir.`,'ok')})};
 
 </script>
 </body>
