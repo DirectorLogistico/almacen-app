@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.20.0 · bloque 6';
+const VERSION='4.21.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -4742,7 +4742,7 @@ ACT.kFdp=async(v,el)=>{const p=K.proy;if(!p||!K.tec)return;const d=fdpLeer();if(
 /* ---------- Copia de seguridad con todas las tablas (también técnicos y solicitudes) ---------- */
 ACT.copiaSQL=async(v,el)=>{if(el){el.disabled=true}
  try{const {data,error}=await SB.rpc('alm_copia');if(error)throw error;
-  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios','alm_modelos','alm_terc_items','alm_terc_movs','alm_terc_despachos','alm_terc_entradas'];
+  const T=['alm_bodegas','alm_config','alm_secuencias','alm_usuarios','alm_materiales','alm_existencias','alm_movimientos','alm_importaciones','alm_proyectos','alm_bom','alm_equivalencias','alm_tecnicos','alm_solicitudes','alm_devoluciones','alm_danos','alm_fotos','alm_bom_correcciones','alm_ordenes_compra','alm_entradas','alm_calidad','alm_cortes','alm_chatarra_ventas','alm_epp','alm_conteos','alm_conteo_lineas','alm_ajustes_wip','alm_inventarios','alm_liberaciones','alm_retales','alm_retal_movs','alm_proveedores','alm_recibos','alm_gases','alm_ajustes_bodega','alm_bom_cambios','alm_materiales_cambios','alm_modelos','alm_terc_items','alm_terc_movs','alm_terc_despachos','alm_terc_entradas','alm_consumo_siesa'];
   const ID=['alm_movimientos','alm_importaciones','alm_bom','alm_fotos','alm_conteo_lineas','alm_retales','alm_retal_movs'];
   let t=`-- Copia de seguridad · Latamks Almacén · ${new Date().toLocaleString('es-CO')}\n-- Generada por ${U.user.email}. Para restaurar: Supabase › SQL Editor › pegar todo › Run.\n-- Requiere que las tablas existan (correr antes los SQL de instalación de la app).\n-- No borra nada: solo agrega lo que falte. Las fotos (archivos) no van aquí: quedan en Storage.\nbegin;\n`;
   T.forEach(k=>{const rows=data[k]||[];t+=`\n-- ${k}: ${rows.length} filas\n`;if(!rows.length)return;
@@ -7632,6 +7632,167 @@ ACT.osiGo=async(v,el)=>{if(el&&el.disabled||!OSI)return;const F=osiFilas();
  const p={prov:OSI.prov,nit:OSI.nit,fecha:OSI.fecha&&OSI.fecha<=HOY?OSI.fecha:HOY,ref:OSI.num,iva:OSI.iva,obs:('Cargada desde la OC de Siesa '+OSI.num+(OSI.pago?' · '+OSI.pago:'')+(OSI.obs?' · '+OSI.obs:'')).slice(0,300),lineas:F.map(f=>({cod:f.cod,ped:f.q,pu:f.puNeto}))};
  await sbAccion(el,'Creando…',async()=>{const {data,error}=await SB.rpc('alm_oc_crear',{p});if(error)throw error;OSI=null;
   await cargarDatos();closeModal();U.view='oc';rerender();toast(`${esc(data.id)} creada desde la OC de Siesa ${esc(p.ref)} (${F.length} ítems). Queda pendiente de recibir.`,'ok')})};
+
+/* =====================================================================
+   v4.21.0 · SQL 37 · Consumo de Siesa por tanque
+   Proyectos › cada tanque › pestaña «Consumo Siesa».
+   Ingeniería arma en Siesa el consumo del tanque como un grupo de kits
+   (KIT BASE, KIT CUERPO, KIT SOPORTE × 4…). Gerencia sube los Excel de los
+   kits tal como salen de Siesa (y, si lo tiene, el de la estructura del
+   tanque, que trae cuántas veces va cada kit). La app compara ítem por ítem
+   el consumo de Siesa con lo entregado NETO al proyecto (entregas − devoluciones
+   + ajustes en proceso; lo dañado queda cargado al tanque) y marca:
+     · Acorde
+     · Siesa consume de más  (Siesa descarga más de lo que almacén entregó)
+     · Siesa consume de menos (almacén entregó más de lo que Siesa descarga)
+   Las láminas se comparan en kg con los kg que las órdenes de corte cargaron
+   al tanque; las piezas CL no existen en Siesa y no se comparan sueltas.
+   Consumibles, EPP, dotación y herramienta no van en ningún kit: se listan
+   aparte y no cuentan como diferencia (salvo que Siesa sí los traiga).
+   ===================================================================== */
+let CS_DB=[],CSU=null,CSR=null;
+const CS_NOKIT=['Consumibles','EPP','Dotación','Herramienta'];
+Object.assign(ACT_PERM,{csCargar:'csiesa',csGo:'csiesa',csRev:'csiesa',csRevGo:'csiesa',csAnu:'csiesa',csAnuGo:'csiesa'});
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.kiosk)return r;
+ try{CS_DB=await leerTodo('alm_consumo_siesa','id,proyecto,item_tanque,kits,estado,nota,revisiones,anulado_motivo,usuario,creado_en','id')||[]}catch(e){CS_DB=[]}  /* sin SQL 37: la pestaña avisa */
+ return r}}
+const csSin0=s=>String(s==null?'':s).trim().replace(/^0+/,'');
+const csVig=pid=>CS_DB.find(c=>c.proyecto===pid&&c.estado==='Vigente')||null;
+const csLam=(cod,desc)=>{const m=MI[cod];return /^kg$/i.test(m&&m.um||'')||/L[ÁA]MINA/i.test((m&&m.desc)||desc||'')};
+function csCod(l){const c=String(l.cod||'').trim().toUpperCase();if(c&&MI[c])return c;const k=csSin0(l.item);if(k){const m=S.mats.find(x=>csSin0(x.item)===k);if(m)return m.cod}return null}
+
+/* ---------- Lectura de los Excel de Siesa ---------- */
+function csParse(rows,nombre){
+ const hi=rows.findIndex(r=>r&&r.some(c=>nrmH(c)==='ITEM RESUMEN')&&r.some(c=>/CANTIDAD/.test(nrmH(c))));
+ if(hi<0)return{nombre,err:'No tiene las columnas «Item resumen» y «Cantidad Requerida» de Siesa'};
+ const H=rows[hi].map(nrmH);const ci=H.indexOf('ITEM RESUMEN'),cr=H.indexOf('REFERENCIA'),cq=H.findIndex(h=>/CANTIDAD/.test(h));
+ const L=[];rows.slice(hi+1).forEach(r=>{if(!r)return;const ir=String(r[ci]==null?'':r[ci]).trim();const q=numIn(r[cq]);if(!ir&&!(cr>=0&&r[cr]))return;
+  const mm=ir.match(/^(\d{3,12})\s+(.*)$/);L.push({item:mm?mm[1]:'',desc:(mm?mm[2]:ir).trim(),cod:cr>=0?String(r[cr]==null?'':r[cr]).trim().toUpperCase():'',q})});
+ if(!L.length)return{nombre,err:'No trae ítems'};
+ const mal=L.filter(l=>!(l.q>0));if(mal.length)return{nombre,err:mal.length+' línea(s) sin cantidad válida'};
+ const esEst=L.filter(l=>/^KIT\b/i.test(l.desc)).length>=Math.ceil(L.length/2);
+ const nm=String(nombre).replace(/\.[^.]+$/,'').match(/(\d{2,12})(?!.*\d)/);
+ return{nombre,tipo:esEst?'estructura':'kit',kit:nm?nm[1].padStart(7,'0'):'',lineas:L}}
+async function csLeer(files){toast('Leyendo '+files.length+' archivo(s)…');const out=[];
+ for(const f of files){try{out.push(csParse(await readXlsx(f),f.name))}catch(e){out.push({nombre:f.name,err:'No se pudo leer: '+(e.message||e)})}}
+ csDesdeArchivos(out)}
+function csDesdeArchivos(arch){const est=arch.find(a=>a.tipo==='estructura');const K=arch.filter(a=>a.tipo==='kit');
+ const E={};if(est)est.lineas.forEach(l=>{E[csSin0(l.item)]={item:l.item,desc:l.desc,mult:l.q}});
+ CSU.arch=arch;CSU.est=est?est.lineas:null;
+ CSU.kits=K.map(a=>{const e=E[csSin0(a.kit)];return{kit:a.kit,desc:e?e.desc:'',mult:e?e.mult:1,archivo:a.nombre,lineas:a.lineas}}).sort((x,y)=>String(x.kit).localeCompare(String(y.kit)));csPrev()}
+
+/* ---------- Cargar el consumo (Gerencia) ---------- */
+ACT.csCargar=pid=>{CSU={pid,kits:[],arch:[],est:null,tok:'cs'+Date.now()+Math.random().toString(36).slice(2,7)};
+ modal(mh('Cargar el consumo de Siesa · '+esc(pid),'Sube los Excel de los kits tal como salen de Siesa. Si también tienes el Excel de la estructura del tanque (pestaña «Kits» del ítem del tanque), súbelo junto: de ahí la app toma cuántas veces va cada kit.')+
+ `<label class="tcfmm"><input type="file" id="csF" accept=".xlsx,.xls" multiple hidden>${icon('upload',18)}<span><b>Escoger los Excel de Siesa</b><small>Puedes escoger varios a la vez (Ctrl + clic). El número del kit se toma del nombre del archivo (ej. KIT_123 → 0000123).</small></span></label>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button></div>`,'w');
+ $('#csF').addEventListener('change',e=>{const f=[...(e.target.files||[])];if(f.length)csLeer(f)})};
+function csPrev(){const U_=CSU;const K=U_.kits;const errs=U_.arch.filter(a=>a.err);
+ const kset=K.map(k=>csSin0(k.kit));const dup=kset.filter((k,i)=>k&&kset.indexOf(k)!==i);const sinN=K.filter(k=>!csSin0(k.kit));
+ const falt=U_.est?U_.est.filter(l=>!kset.includes(csSin0(l.item))):[];const noEst=U_.est?K.filter(k=>!U_.est.some(l=>csSin0(l.item)===csSin0(k.kit))):[];
+ const malM=K.filter(k=>!(k.mult>0));
+ const tot={};K.forEach(k=>k.lineas.forEach(l=>{const c=csCod(l);const key=c||('?'+(l.cod||l.item));tot[key]=tot[key]||{c,l,q:0};tot[key].q+=l.q*(k.mult||0)}));
+ const noApp=Object.values(tot).filter(t=>!t.c);
+ const ok=K.length&&!dup.length&&!sinN.length&&!malM.length;
+ const P_=P(U_.pid);const vig=csVig(U_.pid);
+ modal(mh('Consumo de Siesa · '+esc(U_.pid)+' · vista previa','Revisa los kits y cuántas veces va cada uno. Al guardar, la app compara este consumo con lo entregado al tanque.')+`
+ <div class="kv"><dt>Proyecto</dt><dd>${esc(U_.pid)} · ${esc(P_?P_.desc:'')}</dd><dt>Kits</dt><dd>${K.length}</dd><dt>Ítems distintos</dt><dd>${Object.keys(tot).length}</dd><dt>Estructura del tanque</dt><dd>${U_.est?'Sí ('+U_.est.length+' kits)':'No se subió: escribe las veces de cada kit'}</dd></div>
+ ${vig?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Este tanque ya tiene el consumo <b>${esc(vig.id)}</b>. Al guardar, ese queda como «Reemplazado» y se compara con el nuevo.</span></div>`:''}
+ ${errs.length?errBox('Archivos que no se pudieron usar',errs.map(a=>a.nombre+': '+a.err)):''}
+ ${falt.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Faltan los Excel de ${falt.length} kit(s) de la estructura: ${falt.map(l=>'<b>'+esc(l.item)+'</b> '+esc(l.desc)).join(' · ')}</span></div>`:''}
+ ${noEst.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>${noEst.length} archivo(s) no están en la estructura del tanque: revisa el número del kit.</span></div>`:''}
+ ${dup.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Hay dos archivos del mismo kit: deja uno solo.</span></div>`:''}
+ ${noApp.length?`<div class="note" style="margin-top:10px">${icon('info',16)}<span>${noApp.length} ítem(s) de Siesa no están en Materiales de la app (${noApp.slice(0,6).map(t=>esc(t.l.cod||t.l.item)).join(', ')}${noApp.length>6?'…':''}). Se comparan como «no entregado por la app».</span></div>`:''}
+ <div class="tw" style="max-height:340px;overflow:auto;margin-top:10px"><table class="t"><thead><tr><th>Kit (ítem Siesa)</th><th>Descripción</th><th class="r">Veces</th><th class="r">Ítems</th><th>Archivo</th></tr></thead><tbody>${K.map((k,i)=>`<tr>
+  <td><input class="inp" style="max-width:120px${csSin0(k.kit)?'':';border-color:var(--er,#c0392b)'}" data-csk="${i}" value="${esc(k.kit)}" placeholder="0000123"></td>
+  <td>${k.desc?esc(k.desc):'<span class="sub">(no está en la estructura)</span>'}</td>
+  <td class="num"><input class="inp num" style="max-width:80px;text-align:right${k.mult>0?'':';border-color:var(--er,#c0392b)'}" data-csm="${i}" value="${k.mult}" inputmode="decimal"></td>
+  <td class="num">${k.lineas.length}</td><td class="sub">${esc(k.archivo)}</td></tr>`).join('')||`<tr><td colspan="5">${empty('Ningún Excel de kit','folder')}</td></tr>`}</tbody></table></div>
+ <div class="fld" style="margin-top:12px"><label for="csIt">Ítem del tanque en Siesa (opcional)</label><input class="inp" id="csIt" style="max-width:200px" placeholder="Ej.: 0000900" value="${esc(U_.it||'')}"></div>
+ <div class="mf"><button class="btn ghost" data-act="csCargar" data-v="${esc(U_.pid)}">${icon('upload',16)}Escoger otros archivos</button><div class="sp"></div><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="csGo" ${ok?'':'disabled'}>${icon('check',16)}Guardar consumo</button></div>`,'w');
+ document.querySelectorAll('[data-csk]').forEach(e=>e.addEventListener('change',()=>{CSU.kits[+e.dataset.csk].kit=e.value.trim();CSU.it=($('#csIt')||{}).value||'';setTimeout(csPrev,0)}));
+ document.querySelectorAll('[data-csm]').forEach(e=>e.addEventListener('change',()=>{CSU.kits[+e.dataset.csm].mult=numIn(e.value);CSU.it=($('#csIt')||{}).value||'';setTimeout(csPrev,0)}))}
+ACT.csGo=async(v,el)=>{if(el&&el.disabled||!CSU)return;const p={proyecto:CSU.pid,tok:CSU.tok,item_tanque:(($('#csIt')||{}).value||'').trim(),
+  kits:CSU.kits.map(k=>({kit:csSin0(k.kit).padStart(7,'0'),desc:k.desc,mult:k.mult,archivo:k.archivo,lineas:k.lineas.map(l=>({item:l.item,cod:l.cod,desc:l.desc,q:l.q}))}))};
+ await sbAccion(el,'Guardando…',async()=>{const {data,error}=await SB.rpc('alm_consumo_siesa_guardar',{p});if(error)throw error;const pid=CSU.pid;CSU=null;
+  await cargarDatos();closeModal();U.view='proy';U.pj=pid;U.tab.pj='siesa';rerender();toast(`${esc(data.id)} guardado: ${data.kits||p.kits.length} kits. Revisa las diferencias.`,'ok')})};
+
+/* ---------- Comparación ---------- */
+function csComparar(p,c,tol){const ent=entregado(p.id);const S_={};
+ (c.kits||[]).forEach(k=>(k.lineas||[]).forEach(l=>{const cod=csCod(l);const key=cod||('SIESA:'+(l.cod||l.item));
+  const r=S_[key]=S_[key]||{cod:cod||l.cod||l.item,app:!!cod,item:l.item,desc:cod?M(cod).desc:l.desc,siesa:0,kits:[]};r.siesa+=l.q*(+k.mult||0);
+  const kn=(k.desc||('KIT '+k.kit)).replace(/^KIT\s+/i,'');if(!r.kits.includes(kn))r.kits.push(kn)}));
+ const R=Object.values(S_).map(r=>({...r,ent:r.app?(ent[r.cod]||0):0}));
+ const otros=[],cl=[];
+ Object.keys(ent).forEach(cod=>{const q=ent[cod];if(Math.abs(q)<1e-9||S_[cod])return;const m=M(cod);
+  if(/^CL/i.test(cod))cl.push({cod,desc:m.desc,q,um:m.um});else if(CS_NOKIT.includes(m.fam))otros.push({cod,desc:m.desc,fam:m.fam,q,um:m.um,v:q*(m.costo||0)});
+  else R.push({cod,app:true,item:m.item,desc:m.desc,siesa:0,ent:q,kits:[]})});
+ R.forEach(r=>{const m=MI[r.cod]||{};r.um=m.um||'';r.lam=csLam(r.cod,r.desc);r.dif=+(r.siesa-r.ent).toFixed(4);const t=r.lam?r.siesa*(tol||0)/100:0;
+  r.est=Math.abs(r.dif)<=t+1e-6?'Acorde':r.dif>0?'Siesa consume de más':'Siesa consume de menos';r.val=r.dif*(m.costo||0)});
+ R.sort((a,b)=>(a.est==='Acorde')-(b.est==='Acorde')||Math.abs(b.val)-Math.abs(a.val)||String(a.cod).localeCompare(b.cod));
+ const clStock=S.movs.filter(m=>m.proy===p.id&&m.t==='Salida'&&/^CL/i.test(m.cod)&&m.bod==='AL001').length;
+ return{R,otros,cl,clStock}}
+const csBd=e=>e==='Acorde'?'<span class="bd ok">Acorde</span>':e==='Siesa consume de más'?'<span class="bd wa">Siesa consume de más</span>':'<span class="bd er">Siesa consume de menos</span>';
+function csVista(p){
+ if(!Array.isArray(CS_DB))return'';
+ const c=csVig(p.id);const ant=CS_DB.filter(x=>x.proyecto===p.id&&x.estado!=='Vigente');
+ if(!c)return`<div class="card"><div class="ch"><div><h3>Consumo de Siesa</h3><p>Compara el consumo que Ingeniería crea en Siesa con lo que almacén entregó a este tanque</p></div></div>
+  <div class="note">${icon('info',16)}<span>Todavía no se ha cargado el consumo de Siesa de este tanque. Gerencia sube los Excel de cada kit (como salen de Siesa) y la app dice ítem por ítem si Siesa va a consumir de más o de menos.</span></div>
+  <div class="acts" style="margin-top:12px"><button class="btn" data-act="csCargar" data-v="${p.id}">${icon('upload',16)}Cargar consumo de Siesa</button></div>
+  ${ant.length?`<p class="sub" style="margin-top:10px">${ant.length} consumo(s) anteriores: ${ant.map(x=>esc(x.id)+' ('+x.estado.toLowerCase()+')').join(', ')}</p>`:''}</div>`;
+ const tol=Math.max(0,Math.min(20,numIn(U.f.csTol)||0));const fl=U.f.csE||'dif';
+ const {R,otros,cl,clStock}=csComparar(p,c,tol);
+ const ac=R.filter(r=>r.est==='Acorde'),mas=R.filter(r=>r.est==='Siesa consume de más'),men=R.filter(r=>r.est==='Siesa consume de menos');
+ const L=fl==='dif'?R.filter(r=>r.est!=='Acorde'):fl==='ok'?ac:R;
+ regT('csiesa','Consumo Siesa vs entregado · '+p.id,['Código','Ítem Siesa','Descripción','Kits','UM','Consumo Siesa','Entregado neto','Diferencia (Siesa − entregado)','Estado','Valor diferencia (costo Siesa)'],
+  R.map(r=>[r.cod,r.item||'',r.desc,r.kits.join(', '),r.um,+r.siesa.toFixed(4),+r.ent.toFixed(4),r.dif,r.est,Math.round(r.val)]),`${c.id} · ${p.op} · ${p.desc} · tolerancia láminas ${tol} %`);
+ const rev=(c.revisiones||[]).slice().reverse();const kt=(c.kits||[]);
+ return`<div class="g12 minis" style="margin-bottom:16px">
+  <div class="c3">${kpi('Ítems en el consumo',nf0.format(R.length),kt.length+' kits · '+esc(c.id),'layers')}</div>
+  <div class="c3">${kpi('Acordes',nf0.format(ac.length),R.length?pct(ac.length/R.length)+' de los ítems':'—','check')}</div>
+  <div class="c3">${kpi('Siesa consume de más',nf0.format(mas.length),mas.length?mm(mas.reduce((s,r)=>s+r.val,0))+' al costo Siesa':'Sin diferencias','warn')}</div>
+  <div class="c3">${kpi('Siesa consume de menos',nf0.format(men.length),men.length?mm(-men.reduce((s,r)=>s+r.val,0))+' al costo Siesa':'Sin diferencias','warn')}</div></div>
+ <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3>Consumo de Siesa ${esc(c.id)}</h3><p>Cargado ${fd(String(c.creado_en).slice(0,10))} por ${esc(c.usuario||'—')}${c.item_tanque?' · ítem del tanque '+esc(c.item_tanque):''}</p></div>
+  <div class="acts"><button class="btn ghost sm" data-act="csCargar" data-v="${p.id}">${icon('upload',14)}Cargar de nuevo</button><button class="btn sm" data-act="csRev" data-v="${p.id}">${icon('check',14)}Registrar revisión</button><button class="btn ghost sm dngt" data-act="csAnu" data-v="${esc(c.id)}">${icon('trash',14)}Anular</button></div></div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px">${kt.map(k=>`<span class="bd">${esc(k.desc||('KIT '+k.kit))}${+k.mult!==1?' × '+nf1.format(+k.mult):''}</span>`).join('')}</div>
+  ${p.estado==='Activo'?`<div class="note" style="margin-top:12px">${icon('info',16)}<span>El tanque sigue en proceso: lo que falta por entregar sale como «Siesa consume de más». La revisión final se hace cuando el tanque está terminado.</span></div>`:''}</div>
+ <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3>Ítem por ítem</h3><p><b>Siesa consume de más</b>: Siesa va a descargar más de lo que almacén entregó (falta entregar o sobra en el consumo). <b>Siesa consume de menos</b>: almacén entregó más de lo que Siesa descarga (ese material quedaría sin consumir en Siesa).</p></div><div class="acts">${xbtns('csiesa')}</div></div>
+  <div class="fbar">${seg('csE',[['dif','Con diferencia ('+(mas.length+men.length)+')'],['ok','Acordes ('+ac.length+')'],['','Todos ('+R.length+')']],fl)}<div class="sp"></div><label class="sub" for="csTol" style="margin-right:6px">Tolerancia en láminas (%)</label><input class="inp num" id="csTol" data-f="csTol" style="max-width:70px;text-align:right" inputmode="decimal" value="${esc(U.f.csTol||'0')}"></div>
+  ${L.length?`<div class="tw" style="max-height:620px;overflow:auto"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th class="r">Consumo Siesa</th><th class="r">Entregado neto</th><th class="r">Diferencia</th><th>Estado</th><th class="r">Valor</th></tr></thead><tbody>${L.map(r=>`<tr>
+   <td class="nm">${cc(r.cod)}${r.item?`<div class="sub">Ítem ${esc(r.item)}</div>`:''}${r.app?'':'<div class="sub" style="color:var(--wa)">No está en Materiales de la app</div>'}</td>
+   <td>${esc(r.desc)}<div class="sub">${r.kits.length?esc(r.kits.join(' · ')):'No está en ningún kit de Siesa'}</div></td>
+   <td class="num">${qf(r.siesa,r.um)} <span class="sub">${esc(r.um)}</span></td><td class="num">${qf(r.ent,r.um)}</td>
+   <td class="num"><b style="color:${r.est==='Acorde'?'inherit':r.dif>0?'var(--wa)':'var(--er)'}">${r.dif>0?'+':''}${qf(r.dif,r.um)}</b></td><td>${csBd(r.est)}</td><td class="num">${r.est==='Acorde'?'—':money(Math.abs(r.val))}</td></tr>`).join('')}</tbody></table></div>`:empty(fl==='dif'?'Sin diferencias: el consumo de Siesa coincide con lo entregado':'Sin ítems','check')}</div>
+ <div class="g12" style="margin-bottom:16px">
+  <div class="card c6"><div class="ch"><div><h3>No se comparan: no van en kits</h3><p>Consumibles, EPP, dotación y herramienta entregados a este tanque</p></div></div>${otros.length?tbl(['Código','Descripción','Familia','Entregado','Valor'],otros.sort((a,b)=>b.v-a.v).map(o=>[cc(o.cod),esc(o.desc),esc(o.fam),qf(o.q,o.um)+' '+esc(o.um),money(o.v)]),[3,4],300):empty('Ninguno','check')}</div>
+  <div class="card c6"><div class="ch"><div><h3>Piezas de corte (CL)</h3><p>No existen en Siesa: se comparan por los kg de lámina que la orden de corte cargó al tanque</p></div></div>
+   ${clStock?`<div class="note wa" style="margin-bottom:10px">${icon('warn',16)}<span>${clStock} entrega(s) de piezas CL salieron del stock de AL001: su lámina se cargó a stock cuando se cortó, no a este tanque. Tenlo en cuenta en la diferencia de láminas.</span></div>`:''}
+   ${cl.length?tbl(['Código','Descripción','Entregado'],cl.map(o=>[cc(o.cod),esc(o.desc),qf(o.q,o.um)+' '+esc(o.um)]),[2],300):empty('Ninguna','check')}</div></div>
+ <div class="card"><div class="ch"><div><h3>Revisiones</h3><p>Lo que Gerencia concluyó al revisar el consumo con Ingeniería</p></div></div>
+  ${rev.length?`<ul class="feed">${rev.map(x=>`<li><span class="fdot ${x.resultado==='Acorde'?'':'dv'}"></span><div><b>${esc(x.resultado)}${x.difs&&x.difs.length?' · '+x.difs.length+' ítem(s) con diferencia':''}</b><span>${x.nota?esc(x.nota)+' · ':''}${esc(x.f)} · ${esc(x.u)}</span></div></li>`).join('')}</ul>`:empty('Sin revisiones registradas','clock')}
+  ${ant.length?`<p class="sub" style="margin-top:10px">Consumos anteriores: ${ant.map(x=>esc(x.id)+' ('+x.estado.toLowerCase()+(x.anulado_motivo?': '+esc(x.anulado_motivo):'')+')').join(' · ')}</p>`:''}</div>`}
+{const _o=proyDetOld;proyDetOld=function(p){let h=_o(p);const tb='data-v="mov">Todas las entregas</button>';
+ if(h.includes(tb))h=h.replace(tb,tb+`<button class="${U.tab.pj==='siesa'?'on':''}" data-act="tab" data-k="pj" data-v="siesa">Consumo Siesa</button>`);
+ if(U.tab.pj==='siesa')h+=csVista(p);return h}}
+
+/* ---------- Revisión y anulación (Gerencia) ---------- */
+ACT.csRev=pid=>{const p=P(pid),c=csVig(pid);if(!p||!c)return;const tol=Math.max(0,Math.min(20,numIn(U.f.csTol)||0));const {R}=csComparar(p,c,tol);const D=R.filter(r=>r.est!=='Acorde');
+ CSR={id:c.id,difs:D.slice(0,500).map(r=>({cod:r.cod,desc:r.desc,siesa:+r.siesa.toFixed(4),ent:+r.ent.toFixed(4),dif:r.dif,est:r.est}))};
+ modal(mh('Registrar revisión · '+esc(c.id),'Deja constancia de lo que concluiste al comparar el consumo de Siesa con lo entregado.')+`
+ <div class="kv"><dt>Proyecto</dt><dd>${esc(pid)}</dd><dt>Ítems con diferencia hoy</dt><dd>${D.length}${tol?' (tolerancia en láminas '+tol+' %)':''}</dd></div>
+ <div class="fld" style="margin-top:12px"><label for="csRs">Resultado</label><select class="sel" id="csRs"><option ${D.length?'':'selected'}>Acorde</option><option ${D.length?'selected':''}>Con diferencias</option></select></div>
+ <div class="fld" style="margin-top:12px"><label for="csRn">Nota (obligatoria si hay diferencias)</label><textarea class="inp" id="csRn" rows="3" maxlength="500" placeholder="Ej.: Se pidió a Ingeniería corregir el KIT CUERPO (lámina)"></textarea></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="csRevGo">${icon('check',16)}Guardar revisión</button></div>`)};
+ACT.csRevGo=async(v,el)=>{if(!CSR)return;const res=$('#csRs').value,nota=$('#csRn').value.trim();
+ if(res==='Con diferencias'&&nota.length<4){toast('Escribe qué se hizo con las diferencias.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const {error}=await SB.rpc('alm_consumo_siesa_revisar',{p:{id:CSR.id,resultado:res,nota,difs:res==='Acorde'?[]:CSR.difs}});if(error)throw error;CSR=null;
+  await cargarDatos();closeModal();rerender();toast('Revisión registrada.','ok')})};
+ACT.csAnu=id=>{modal(mh('Anular consumo '+esc(id),'Úsalo si el consumo se cargó por error (otro tanque, archivos equivocados). No se borra: queda como «Anulado» con el motivo.')+`
+ <div class="fld"><label for="csAm">Motivo</label><input class="inp" id="csAm" maxlength="200" placeholder="Ej.: se cargó al proyecto equivocado"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="csAnuGo" data-v="${esc(id)}">${icon('trash',16)}Anular</button></div>`)};
+ACT.csAnuGo=async(id,el)=>{const mo=$('#csAm').value.trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_consumo_siesa_anular',{p_id:id,p_motivo:mo});if(error)throw error;
+  await cargarDatos();closeModal();rerender();toast(esc(id)+' anulado.','ok')})};
 
 </script>
 </body>
