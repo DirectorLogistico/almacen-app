@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.21.0 · bloque 6';
+const VERSION='4.22.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7763,6 +7763,7 @@ function csVista(p){
    <td>${esc(r.desc)}<div class="sub">${r.kits.length?esc(r.kits.join(' · ')):'No está en ningún kit de Siesa'}</div></td>
    <td class="num">${qf(r.siesa,r.um)} <span class="sub">${esc(r.um)}</span></td><td class="num">${qf(r.ent,r.um)}</td>
    <td class="num"><b style="color:${r.est==='Acorde'?'inherit':r.dif>0?'var(--wa)':'var(--er)'}">${r.dif>0?'+':''}${qf(r.dif,r.um)}</b></td><td>${csBd(r.est)}</td><td class="num">${r.est==='Acorde'?'—':money(Math.abs(r.val))}</td></tr>`).join('')}</tbody></table></div>`:empty(fl==='dif'?'Sin diferencias: el consumo de Siesa coincide con lo entregado':'Sin ítems','check')}</div>
+ ${csTresCard(p,c,tol)}
  <div class="g12" style="margin-bottom:16px">
   <div class="card c6"><div class="ch"><div><h3>No se comparan: no van en kits</h3><p>Consumibles, EPP, dotación y herramienta entregados a este tanque</p></div></div>${otros.length?tbl(['Código','Descripción','Familia','Entregado','Valor'],otros.sort((a,b)=>b.v-a.v).map(o=>[cc(o.cod),esc(o.desc),esc(o.fam),qf(o.q,o.um)+' '+esc(o.um),money(o.v)]),[3,4],300):empty('Ninguno','check')}</div>
   <div class="card c6"><div class="ch"><div><h3>Piezas de corte (CL)</h3><p>No existen en Siesa: se comparan por los kg de lámina que la orden de corte cargó al tanque</p></div></div>
@@ -7793,6 +7794,103 @@ ACT.csAnu=id=>{modal(mh('Anular consumo '+esc(id),'Úsalo si el consumo se carg�
 ACT.csAnuGo=async(id,el)=>{const mo=$('#csAm').value.trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
  await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_consumo_siesa_anular',{p_id:id,p_motivo:mo});if(error)throw error;
   await cargarDatos();closeModal();rerender();toast(esc(id)+' anulado.','ok')})};
+
+/* ---------- v4.21.1 · BOM (inicial y actual) vs entregado vs consumo Siesa ---------- */
+function csBomIni(p){const act={};(p.bom||[]).forEach(l=>{act[l.cod]=(act[l.cod]||0)+(+l.q||0)});const ini={...act};
+ const C=(S.bomCambios||[]).filter(x=>x.proyecto===p.id).sort((a,b)=>(+String(b.id).replace(/\D/g,''))-(+String(a.id).replace(/\D/g,'')));
+ let corte=null,n=0;const add=(k,v)=>{if(k)ini[k]=(ini[k]||0)+v};
+ for(const x of C){if(x.accion==='Reemplazar BOM'||x.accion==='Eliminar BOM'){corte=x;break}n++;
+  if(x.accion==='Agregar línea')add(x.cod,-(+x.q_despues||0));
+  else if(x.accion==='Eliminar línea')add(x.cod,+x.q_antes||0);
+  else if(x.accion==='Editar línea'){add(x.cod,-(+x.q_despues||0));add(x.cod_antes||x.cod,+x.q_antes||0)}}
+ Object.keys(ini).forEach(k=>{if(Math.abs(ini[k])<1e-9)delete ini[k]});return{act,ini,corte,n}}
+function csTres(p,c,tol){const {R}=csComparar(p,c,tol);const {act,ini,corte,n}=csBomIni(p);const ent=entregado(p.id);const sie={},rr={};
+ R.forEach(r=>{sie[r.cod]=r.siesa;rr[r.cod]=r});
+ const keys=new Set([...Object.keys(act),...Object.keys(ini),...R.filter(r=>r.siesa>0||r.ent).map(r=>r.cod)]);
+ const T=[];let clL=0;
+ keys.forEach(k=>{if(/^CL/i.test(k)){clL++;return}const m=MI[k]||{};const r=rr[k];
+  const x={cod:k,item:(r&&r.item)||m.item||'',desc:(r&&r.desc)||m.desc||k,um:m.um||(r&&r.um)||'',ini:ini[k]||0,act:act[k]||0,ent:r?r.ent:(ent[k]||0),sie:sie[k]||0,lam:csLam(k,(r&&r.desc)||m.desc),app:r?r.app:true};
+  if(!x.act&&!x.ini&&!x.sie&&CS_NOKIT.includes(m.fam))return;
+  const eq=(a,b,t)=>Math.abs(a-b)<=(t||0)+1e-6;const tl=x.lam?x.sie*(tol||0)/100:0;
+  x.porKg=x.lam&&!x.act&&!x.ini;
+  x.eb=x.porKg||(!x.act&&!x.ent)?'—':eq(x.ent,x.act)?'Completo':x.ent<x.act?'Falta entregar '+qf(x.act-x.ent):x.act?'Entregado de más '+qf(x.ent-x.act):'Entregado sin estar en el BOM';
+  x.sb=x.porKg?(eq(x.sie,x.ent,tl)?'Lámina: igual a lo cortado':'Lámina: '+(x.sie>x.ent?'Siesa '+qf(x.sie-x.ent)+' kg más que lo cortado':'Siesa '+qf(x.ent-x.sie)+' kg menos que lo cortado')):eq(x.sie,x.act)?'Igual':!x.sie?'No está en Siesa':!x.act?'No está en el BOM':'Siesa '+qf(x.sie)+' · BOM '+qf(x.act);
+  x.ok=x.porKg?eq(x.sie,x.ent,tl):(eq(x.sie,x.act)&&eq(x.ent,x.act));
+  x.pend=!x.porKg&&eq(x.sie,x.act)&&x.ent<x.act-1e-6;
+  x.est=x.ok?'Todo coincide':x.pend?'Falta entregar':x.porKg?'Lámina distinta':!eq(x.sie,x.act)?'Siesa distinto al BOM':'Entregado distinto al BOM';
+  T.push(x)});
+ const ord={'Siesa distinto al BOM':0,'Lámina distinta':1,'Entregado distinto al BOM':2,'Falta entregar':3,'Todo coincide':4};
+ T.sort((a,b)=>ord[a.est]-ord[b.est]||String(a.cod).localeCompare(b.cod));
+ return{T,clL,corte,n}}
+const csBd3=e=>`<span class="bd ${e==='Todo coincide'?'ok':e==='Falta entregar'?'':e==='Entregado distinto al BOM'?'wa':'er'}">${e}</span>`;
+function csTresCard(p,c,tol){const {T,clL,corte,n}=csTres(p,c,tol);const fl=U.f.csB||'dif';
+ const cnt=e=>T.filter(x=>x.est===e).length;const L=fl==='dif'?T.filter(x=>!x.ok):fl==='ok'?T.filter(x=>x.ok):T;
+ regT('cs3','BOM vs entregado vs Siesa · '+p.id,['Código','Ítem Siesa','Descripción','UM','BOM inicial','BOM actual','Entregado neto','Consumo Siesa','Entregado vs BOM','Siesa vs BOM','Estado'],
+  T.map(x=>[x.cod,x.item,x.desc,x.um,x.porKg?'':x.ini,x.porKg?'':x.act,+x.ent.toFixed(4),+x.sie.toFixed(4),x.eb,x.sb,x.est]),`${c.id} · ${p.op} · ${p.desc}`);
+ const chip=(e,t)=>`<span class="bd ${t}" style="margin-right:6px">${e}: ${cnt(e)}</span>`;
+ return`<div class="card" style="margin-bottom:16px"><div class="ch"><div><h3>BOM vs entregado vs Siesa</h3><p>Las tres miradas del mismo tanque: lo que pidió Diseño (BOM), lo que almacén entregó y lo que Ingeniería consume en Siesa. <b>BOM inicial</b> = antes de los cambios de Gerencia${n?' ('+n+' cambio(s))':''}${corte?' · desde el reemplazo del BOM '+esc(corte.id)+' del '+fd(corte.fecha):''}.</p></div><div class="acts">${xbtns('cs3')}</div></div>
+  <div style="margin-bottom:10px">${chip('Siesa distinto al BOM','er')}${chip('Lámina distinta','er')}${chip('Entregado distinto al BOM','wa')}${chip('Falta entregar','')}${chip('Todo coincide','ok')}</div>
+  <div class="fbar">${seg('csB',[['dif','Con diferencia ('+T.filter(x=>!x.ok).length+')'],['ok','Todo coincide ('+cnt('Todo coincide')+')'],['','Todos ('+T.length+')']],fl)}</div>
+  ${L.length?`<div class="tw" style="max-height:620px;overflow:auto"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th class="r">BOM inicial</th><th class="r">BOM actual</th><th class="r">Entregado</th><th class="r">Siesa</th><th>Entregado vs BOM</th><th>Siesa vs BOM</th><th>Estado</th></tr></thead><tbody>${L.map(x=>`<tr>
+   <td class="nm">${cc(x.cod)}${x.item?`<div class="sub">Ítem ${esc(x.item)}</div>`:''}${x.app?'':'<div class="sub" style="color:var(--wa)">No está en Materiales de la app</div>'}</td>
+   <td>${esc(x.desc)}${x.porKg?'<div class="sub">Lámina: en el BOM van las piezas CL; se compara por kg cortados</div>':''}</td>
+   <td class="num">${x.porKg?'—':`<span style="${Math.abs(x.ini-x.act)>1e-6?'text-decoration:line-through;color:var(--tx3)':''}">${qf(x.ini,x.um)}</span>`}</td>
+   <td class="num"><b>${x.porKg?'—':qf(x.act,x.um)}</b> <span class="sub">${esc(x.um)}</span></td><td class="num">${qf(x.ent,x.um)}</td><td class="num">${qf(x.sie,x.um)}</td>
+   <td class="sub">${esc(x.eb)}</td><td class="sub">${esc(x.sb)}</td><td>${csBd3(x.est)}</td></tr>`).join('')}</tbody></table></div>`:empty('Sin ítems en este filtro','check')}
+  ${clL?`<p class="sub" style="margin-top:10px">${clL} código(s) de piezas CL del BOM no se listan aquí: no existen en Siesa y su lámina se compara por kg.</p>`:''}</div>`}
+
+/* =====================================================================
+   v4.22.0 · Proyectos › cada tanque › pestaña «Láminas»
+   Lo que el proyecto consumió de cada lámina (en kg): entregado por las
+   órdenes de corte (y entregas directas), menos devoluciones, más ajustes en
+   proceso; su valor al costo de Siesa; el consumo de Siesa del mismo código
+   (si se cargó en «Consumo Siesa») y la diferencia. Debajo, las órdenes de
+   corte que cargaron lámina al tanque, con la lámina usada, kg inicial,
+   retal, chatarra y kg cargados a este proyecto.
+   Solo lee datos: no hay SQL nuevo. Filtro: «Con consumo» o «Todas las
+   láminas» (para ver también las que están en 0).
+   ===================================================================== */
+const lpEsLam=m=>!!m&&!/^CL/i.test(m.cod||'')&&/^kg$/i.test(m.um||'')&&/L[ÁA]MINA/i.test(m.desc||'');
+function lpSiesa(pid){const c=(typeof csVig==='function')?csVig(pid):null;const o={};if(!c)return null;
+ (c.kits||[]).forEach(k=>(k.lineas||[]).forEach(l=>{const cod=(typeof csCod==='function'&&csCod(l))||String(l.cod||'').toUpperCase();if(!cod)return;o[cod]=(o[cod]||0)+(+l.q||0)*(+k.mult||0)}));return o}
+function lpDatos(p){const ent={},dev={},aj={};
+ S.movs.forEach(m=>{if(m.proy!==p.id||!lpEsLam(MI[m.cod]))return;const q=+m.q||0;
+  if(m.t==='Salida')ent[m.cod]=(ent[m.cod]||0)+q;else if(m.t==='Devolución')dev[m.cod]=(dev[m.cod]||0)+q;else if(m.t==='Ajuste WIP')aj[m.cod]=(aj[m.cod]||0)+(m.aj==='-'?-q:q)});
+ const sie=lpSiesa(p.id);const cortes=(S.cortes||[]).filter(c=>(c.dest||[]).some(d=>d.d===p.id)||c.proy===p.id);
+ const nOrd={};cortes.forEach(c=>(c.lams||[]).forEach(l=>{nOrd[l.cod]=(nOrd[l.cod]||0)+1}));
+ const todas=U.f.lpT==='all';
+ const cods=new Set([...Object.keys(ent),...Object.keys(dev),...Object.keys(aj),...Object.keys(sie||{}).filter(k=>lpEsLam(MI[k])),...Object.keys(nOrd)]);
+ if(todas)S.mats.forEach(m=>{if(lpEsLam(m))cods.add(m.cod)});
+ const R=[...cods].map(cod=>{const m=MI[cod]||{cod,desc:cod};const net=(ent[cod]||0)-(dev[cod]||0)+(aj[cod]||0);const s=sie?(sie[cod]||0):null;
+  return{cod,desc:m.desc||cod,item:m.item||'',ent:ent[cod]||0,dev:dev[cod]||0,aj:aj[cod]||0,net,val:net*(m.costo||0),sie:s,dif:s==null?null:+(s-net).toFixed(3),ord:nOrd[cod]||0}});
+ R.sort((a,b)=>(b.net-a.net)||((b.sie||0)-(a.sie||0))||a.cod.localeCompare(b.cod));
+ return{R,cortes,sie}}
+function lpVista(p){const {R,cortes,sie}=lpDatos(p);const tot=R.reduce((a,r)=>({net:a.net+r.net,val:a.val+r.val,sie:a.sie+(r.sie||0)}),{net:0,val:0,sie:0});
+ regT('lamproy','Láminas consumidas · '+p.id,['Código','Ítem Siesa','Descripción','Entregado (kg)','Devuelto (kg)','Ajuste en proceso (kg)','Consumo neto (kg)','Valor (costo Siesa)','Consumo Siesa (kg)','Diferencia Siesa − app (kg)','Órdenes de corte'],
+  R.map(r=>[r.cod,r.item,r.desc,+r.ent.toFixed(3),+r.dev.toFixed(3),+r.aj.toFixed(3),+r.net.toFixed(3),Math.round(r.val),r.sie==null?'':+r.sie.toFixed(3),r.dif==null?'':r.dif,r.ord]),`${p.op} · ${p.desc}`);
+ const kgP=c=>(c.dest||[]).filter(d=>d.d===p.id).reduce((a,d)=>a+(+d.cons||0),0);
+ regT('lamproyoc','Órdenes de corte con lámina cargada · '+p.id,['Orden','Fecha','Lámina','Descripción','Kg inicial','Retal (kg)','Chatarra (kg)','Kg cargados a este proyecto','Destinos'],
+  cortes.map(c=>[c.id,c.f,(c.lams||[]).map(l=>l.cod).join(', '),(c.lams||[]).map(l=>(MI[l.cod]||{}).desc||l.cod).join(' / '),c.kgIni,c.kgRet,c.kgChat,+kgP(c).toFixed(3),(c.dest||[]).map(d=>d.d).join(', ')]));
+ const dif=r=>r.dif==null?'<span class="sub">—</span>':Math.abs(r.dif)<1e-6?'<span class="bd ok">Igual</span>':`<b style="color:${r.dif>0?'var(--wa)':'var(--er)'}">${r.dif>0?'+':''}${nf1.format(r.dif)}</b>`;
+ return`<div class="g12 minis" style="margin-bottom:16px">
+  <div class="c4">${kpi('Lámina consumida',nf1.format(tot.net)+' kg',R.filter(r=>r.net).length+' referencia(s) · neto de devoluciones','layers')}</div>
+  <div class="c4">${kpi('Valor de la lámina',mm(tot.val),'Al costo de Siesa','box')}</div>
+  <div class="c4">${kpi('Consumo en Siesa',sie?nf1.format(tot.sie)+' kg':'Sin cargar',sie?'Diferencia '+(tot.sie-tot.net>0?'+':'')+nf1.format(tot.sie-tot.net)+' kg':'Se carga en la pestaña «Consumo Siesa»','check')}</div></div>
+ <div class="card" style="margin-bottom:16px"><div class="ch"><div><h3>Láminas consumidas por el proyecto</h3><p>Kg de cada lámina cargados a este tanque: lo entregado por las órdenes de corte y entregas directas, menos devoluciones, más ajustes en proceso. Las piezas CL no se suman aquí: su lámina ya está en estos kg.</p></div><div class="acts">${xbtns('lamproy')}</div></div>
+  <div class="fbar">${seg('lpT',[['','Con consumo'],['all','Todas las láminas']],U.f.lpT||'')}</div>
+  ${R.length?`<div class="tw" style="max-height:560px;overflow:auto"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th class="r">Entregado</th><th class="r">Devuelto</th><th class="r">Consumo neto</th><th class="r">Valor</th><th class="r">Consumo Siesa</th><th class="r">Diferencia Siesa − app</th><th class="r">Órdenes</th></tr></thead><tbody>${R.map(r=>`<tr>
+   <td class="nm">${cc(r.cod)}${r.item?`<div class="sub">Ítem ${esc(r.item)}</div>`:''}</td><td>${esc(r.desc)}</td>
+   <td class="num">${nf1.format(r.ent)} <span class="sub">kg</span></td><td class="num">${r.dev?nf1.format(r.dev):'—'}</td>
+   <td class="num"><b>${nf1.format(r.net)}</b> <span class="sub">kg</span>${r.aj?`<div class="sub">ajuste ${r.aj>0?'+':''}${nf1.format(r.aj)}</div>`:''}</td>
+   <td class="num">${money(r.val)}</td><td class="num">${r.sie==null?'<span class="sub">—</span>':nf1.format(r.sie)+' <span class="sub">kg</span>'}</td><td class="num">${dif(r)}</td><td class="num">${r.ord||'—'}</td></tr>`).join('')}
+   <tr><td colspan="4"><b>Total</b></td><td class="num"><b>${nf1.format(tot.net)}</b> <span class="sub">kg</span></td><td class="num"><b>${money(tot.val)}</b></td><td class="num">${sie?'<b>'+nf1.format(tot.sie)+'</b> <span class="sub">kg</span>':'—'}</td><td class="num">${sie?'<b>'+(tot.sie-tot.net>0?'+':'')+nf1.format(tot.sie-tot.net)+'</b>':'—'}</td><td></td></tr></tbody></table></div>`:empty(U.f.lpT==='all'?'No hay láminas en Materiales':'Este proyecto todavía no tiene lámina cargada','layers')}
+  ${sie?'':`<div class="note" style="margin-top:10px">${icon('info',16)}<span>Para ver la columna «Consumo Siesa», carga el consumo de Siesa del tanque en la pestaña «Consumo Siesa».</span></div>`}</div>
+ <div class="card"><div class="ch"><div><h3>Órdenes de corte que cargaron lámina a este tanque</h3><p>Qué lámina se usó en cada orden y cuántos kg quedaron cargados a este proyecto (la lámina usada se reparte por los kg de las piezas de cada destino).</p></div><div class="acts">${xbtns('lamproyoc')}</div></div>
+  ${cortes.length?tbl(['Orden','Fecha','Lámina usada','Kg inicial','Retal','Chatarra','Kg a este proyecto','Destinos'],cortes.map(c=>[`<b>${esc(c.id)}</b>`,fd(c.f),(c.lams||[]).map(l=>`${cc(l.cod)}<div class="sub">${esc((MI[l.cod]||{}).desc||'')}</div>`).join(''),nf1.format(c.kgIni)+' kg',nf1.format(c.kgRet)+' kg',nf1.format(c.kgChat)+' kg',`<b>${nf1.format(kgP(c))} kg</b>`,esc((c.dest||[]).map(d=>d.d).join(', '))]),[3,4,5,6],420):empty('Ninguna orden de corte cargó lámina a este proyecto','layers')}</div>`}
+{const _o=proyDetOld;proyDetOld=function(p){let h=_o(p);const tb='data-v="siesa">Consumo Siesa</button>';const tb0='data-v="mov">Todas las entregas</button>';
+ const bt=`<button class="${U.tab.pj==='lam'?'on':''}" data-act="tab" data-k="pj" data-v="lam">Láminas</button>`;
+ if(h.includes(tb))h=h.replace(tb,tb+bt);else if(h.includes(tb0))h=h.replace(tb0,tb0+bt);
+ if(U.tab.pj==='lam')h+=lpVista(p);return h}}
 
 </script>
 </body>
