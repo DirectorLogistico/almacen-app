@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.24.0 · bloque 6';
+const VERSION='4.24.1 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -8110,14 +8110,22 @@ const reNorm=x=>String(x==null?'':x).trim().replace(/\s+/g,' ').toUpperCase();
 ACT.reEppTpl=()=>{if(!window.XLSX){toast('La librería de Excel no cargó.','er');return}const wb=XLSX.utils.book_new();
  const ws=XLSX.utils.aoa_to_sheet([['DESCRIPCION','UNIDAD','CANTIDAD','VALOR UNITARIO','UBICACION'],['GUANTE DE NITRILO TALLA 9','par',20,5000,'E-2']]);XLSX.utils.book_append_sheet(wb,ws,'Conteo EPP');XLSX.writeFile(wb,'Plantilla_reinicio_EPP.xlsx')};
 ACT.reEpp=()=>{RE={filas:[],errs:[],archivo:''};reModal()};
-function reModal(){const F=RE.filas;const epp=S.mats.filter(m=>m.fam==='EPP');const byD={};epp.forEach(m=>byD[reNorm(m.desc)]=m);
+ACT.reVaciar=()=>{RE={filas:[],errs:[],archivo:'',vaciar:true};reModal()};
+function reVaciarModal(){const L=S.mats.filter(m=>m.fam==='EPP'&&disp(m)>0);const u=L.reduce((a,m)=>a+disp(m),0),v=L.reduce((a,m)=>a+disp(m)*(m.costo||0),0);
+ modal(mh('Borrón y cuenta nueva del EPP','Deja TODO el EPP en 0 ahora, sin archivo. Los materiales no se borran: cuando el conteo físico esté validado, lo cargas con el Excel y cada EPP que coincida por descripción vuelve a tener existencia con su mismo código.')+`
+ <div class="kv"><dt>EPP con existencia hoy</dt><dd>${L.length} referencias</dd><dt>Unidades que quedan en 0</dt><dd>${nf0.format(u)}</dd><dt>Valor</dt><dd>${mm(v)}</dd></div>
+ <div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Solo la familia <b>EPP</b>: la dotación y lo demás no se tocan. Mientras el EPP esté en 0, almacén no podrá entregarlo. Antes, descarga la copia de seguridad en Ajustes.</span></div>
+ <div class="tw" style="max-height:200px;overflow:auto;margin-top:10px"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th class="r">Existencia</th></tr></thead><tbody>${L.map(m=>`<tr><td><b>${esc(m.cod)}</b></td><td>${esc(m.desc)}</td><td class="num">${qf(disp(m))}</td></tr>`).join('')}</tbody></table></div>
+ ${L.length?`<div class="fld" style="margin-top:12px"><label for="reConf">Para confirmar, escribe REINICIAR EPP</label><input class="inp" id="reConf" autocomplete="off" placeholder="REINICIAR EPP"></div>`:''}
+ <div class="mf"><button class="btn ghost" data-act="reEpp">Volver</button><div class="sp"></div><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="reEppGo" ${L.length?'':'disabled'}>${icon('trash',16)}Dejar todo el EPP en 0</button></div>`,'w')}
+function reModal(){if(RE.vaciar){reVaciarModal();return}const F=RE.filas;const epp=S.mats.filter(m=>m.fam==='EPP');const byD={};epp.forEach(m=>byD[reNorm(m.desc)]=m);
  const otros={};S.mats.filter(m=>m.fam!=='EPP').forEach(m=>otros[reNorm(m.desc)]=m);
  const ex=F.filter(f=>byD[reNorm(f.desc)]),nu=F.filter(f=>!byD[reNorm(f.desc)]&&!otros[reNorm(f.desc)]),bad=F.filter(f=>otros[reNorm(f.desc)]&&!byD[reNorm(f.desc)]);
  const enF=new Set(F.map(f=>reNorm(f.desc)));const cero=epp.filter(m=>!enF.has(reNorm(m.desc))&&disp(m)>0);
  const val=F.reduce((a,f)=>{const m=byD[reNorm(f.desc)];return a+f.q*(m&&m.costo&&!(m.cod||'').startsWith('EPP-')?m.costo:(f.costo||(m?m.costo:0)||0))},0);
  const errs=RE.errs.concat(bad.map(f=>`«${f.desc}» ya existe como ${otros[reNorm(f.desc)].fam} (${otros[reNorm(f.desc)].cod}): este reinicio solo toca EPP`));
  modal(mh('Reiniciar inventario de EPP','Deja la existencia de todo el EPP igual al conteo nuevo del Excel. Solo la familia EPP: la dotación y lo demás no se tocan. El kárdex no se borra: cada diferencia queda como ajuste.')+`
- <div class="acts" style="margin-bottom:10px"><button class="btn ghost sm" data-act="reEppTpl">${icon('xls',14)}Descargar plantilla</button></div>
+ <div class="acts" style="margin-bottom:10px"><button class="btn ghost sm" data-act="reEppTpl">${icon('xls',14)}Descargar plantilla</button><button class="btn ghost sm" data-act="reVaciar">${icon('trash',14)}Solo dejar todo el EPP en 0 (sin archivo)</button></div>
  <label class="tcfmm"><input type="file" id="reF" accept=".xlsx,.xls" hidden>${icon('upload',18)}<span><b>${RE.archivo?esc(RE.archivo):'Escoger el Excel del conteo de EPP'}</b><small>Columnas: DESCRIPCION, UNIDAD, CANTIDAD, VALOR UNITARIO, UBICACION. Ítems sin código: si la descripción ya existe como EPP se ajusta ese material; si no, se crea con código EPP-0001…</small></span></label>
  ${F.length?`<div class="kv" style="margin-top:12px"><dt>Filas del Excel</dt><dd>${F.length}</dd><dt>EPP que ya existe (se ajusta)</dt><dd>${ex.length}</dd><dt>EPP nuevo (se crea)</dt><dd>${nu.length}</dd><dt>EPP con existencia que no está en el Excel (queda en 0)</dt><dd>${cero.length}</dd><dt>Unidades después</dt><dd>${nf0.format(F.reduce((a,f)=>a+f.q,0))}</dd><dt>Valor aproximado después</dt><dd>${mm(val)}</dd></div>
   ${cero.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Quedan en 0: ${cero.slice(0,8).map(m=>esc(m.desc)+' ('+qf(disp(m))+')').join(', ')}${cero.length>8?' y '+(cero.length-8)+' más':''}.</span></div>`:''}
@@ -8135,9 +8143,9 @@ function reParse(rows,nombre){const h=hdr(rows,['DESCRIPCION','CANTIDAD']);RE={f
   if(!['und','kg','m','gal','L','rollo','cil','par'].includes(um))RE.errs.push(`Fila ${h.i+k+2} (${d}): la unidad «${um}» no es válida (und, par, kg, m, gal, L, rollo, cil)`);
   RE.filas.push({desc:d,um,q:isNaN(q)?0:q,costo:isNaN(v)?0:v,ub:cB>=0&&r[cB]!=null?String(r[cB]).trim():''})});
  if(!RE.filas.length)RE.errs.push('El archivo no trae filas con descripción.');reModal()}
-ACT.reEppGo=async(v,el)=>{if(!RE||!RE.filas.length)return;if((($('#reConf')||{}).value||'').trim().toUpperCase()!=='REINICIAR EPP'){toast('Escribe REINICIAR EPP para confirmar.','er');return}
- await sbAccion(el,'Reiniciando…',async()=>{const {data,error}=await SB.rpc('alm_epp_reiniciar',{p:{confirmar:'REINICIAR EPP',archivo:RE.archivo,filas:RE.filas}});if(error)throw error;RE=null;
-  await cargarDatos();closeModal();rerender();toast(`${esc(data.documento)}: ${data.ajustados} EPP ajustados, ${data.nuevos} creados y ${data.en_cero} quedaron en 0. Valor del EPP: ${mm(+data.valor||0)}.`,'ok')})};
+ACT.reEppGo=async(v,el)=>{if(!RE||(!RE.vaciar&&!RE.filas.length))return;if((($('#reConf')||{}).value||'').trim().toUpperCase()!=='REINICIAR EPP'){toast('Escribe REINICIAR EPP para confirmar.','er');return}
+ const vac=!!RE.vaciar;await sbAccion(el,'Reiniciando…',async()=>{const {data,error}=await SB.rpc('alm_epp_reiniciar',{p:RE.vaciar?{confirmar:'REINICIAR EPP',vaciar:true,filas:[]}:{confirmar:'REINICIAR EPP',archivo:RE.archivo,filas:RE.filas}});if(error)throw error;RE=null;
+  await cargarDatos();closeModal();rerender();toast(vac?`${esc(data.documento)}: ${data.en_cero} EPP quedaron en 0. Cuando el conteo esté validado, cárgalo con el Excel.`:`${esc(data.documento)}: ${data.ajustados} EPP ajustados, ${data.nuevos} creados y ${data.en_cero} quedaron en 0. Valor del EPP: ${mm(+data.valor||0)}.`,'ok')})};
 {const _vi=VIEWS.eppinv;VIEWS.eppinv=function(){let h=_vi.apply(this,arguments);if(U.user&&U.user.rol==='Gerencia'){const k='<div class="acts">'+xbtns('eppinv')+'</div>';if(h.includes(k))h=h.replace(k,'<div class="acts">'+xbtns('eppinv')+`<button class="btn ghost" data-act="reEpp">${icon('upload',16)}Reiniciar inventario de EPP (Excel)</button></div>`)}return h}}
 
 </script>
