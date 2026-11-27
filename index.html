@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.23.1 · bloque 6';
+const VERSION='4.24.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7928,11 +7928,11 @@ if(typeof ROL_QR!=='undefined'&&!ROL_QR.includes(MANT))ROL_QR.push(MANT);
  /* v4.23.1: Gestión Humana y Mantenimiento solo ven sus pantallas */
  const VER={[GH]:['eppsol','epp','eppinv'],[MANT]:['sol','eppsol','eppinv']};
  NAV.forEach(n=>{if(!n.id||!Array.isArray(n.r))return;Object.keys(VER).forEach(r=>{const ok=VER[r].includes(n.id);const i=n.r.indexOf(r);if(ok&&i<0)n.r.push(r);if(!ok&&i>=0)n.r.splice(i,1)})})})();
-let MI_TEC=null;
+let MI_TEC=null,MI_USADOS=[];
 
 {const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.kiosk&&!U.user)return r;
  try{ES_DB=(await leerTodo('alm_epp_solicitudes','*','id')||[]).sort((a,b)=>b.id.localeCompare(a.id))}catch(e){ES_DB=[]}
- if(U.user&&U.user.rol===MANT){try{const us=await leerTodo('alm_usuarios','email,tecnico','email');const me=(us||[]).find(x=>x.email===U.user.email);MI_TEC=me&&me.tecnico||null}catch(e){MI_TEC=null}}
+ if(U.user&&U.user.rol===MANT){try{const us=await leerTodo('alm_usuarios','email,tecnico','email');const me=(us||[]).find(x=>x.email===U.user.email);MI_TEC=me&&me.tecnico||null;MI_USADOS=(us||[]).filter(x=>x.tecnico&&x.email!==U.user.email).map(x=>x.tecnico)}catch(e){MI_TEC=null}}
  return r}}
 const esEst=e=>e==='Entregada'?'<span class="bd ok">Entregada</span>':e==='Anulada'?'<span class="bd">Anulada</span>':'<span class="bd wa">Pendiente</span>';
 const esLin=s=>(s.lineas||[]).map(l=>`${qf(+l.q)} × ${esc((MI[l.cod]||{}).desc||l.cod)}`).join('<br>');
@@ -8036,9 +8036,16 @@ if(SB&&SB.rpc){const _r=SB.rpc.bind(SB);SB.rpc=function(fn,a,o){const pr=_r(fn,a
  return Promise.resolve(pr).then(res=>{try{if(typeof KQ!=='undefined'&&res&&res.data)KQ.tecs=res.data.tecnicos||[]}catch(e){}return res})}}
 ACT.kioskEpp=()=>{if(!can('eppsol.new')){toast('Tu perfil no pide EPP.','wa');return}ACT.kioskIn();if(U.kiosk&&K.tec){K.mode='pedir';K.proy='EPP';K.step=4;K.sel={};K.q='';K.dest=kEppElige()?'':K.tec.cod;renderKiosk()}};
 /* v4.23.1: Mantenimiento pide desde su propio perfil: su usuario queda vinculado a su ficha de técnico (una sola vez) */
-{const _ki=ACT.kioskIn;ACT.kioskIn=(v,el)=>{if(!kEsMant())return _ki(v,el);
- const t=MI_TEC&&S.tecs.find(x=>x.cod===MI_TEC);
+/* v4.24.0: sin código ni iniciales. Si la ficha no está vinculada, la app la busca por el nombre; si no la encuentra sola, se escoge de una lista una vez */
+const mantLibres=()=>S.tecs.filter(t=>t.activo&&!MI_USADOS.includes(t.cod)).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+async function mantVincular(cod){const {data,error}=await SB.rpc('alm_mi_tecnico_elegir',{p_cod:cod});if(error)throw error;MI_TEC=data.cod;return S.tecs.find(x=>x.cod===data.cod)||{cod:data.cod,nombre:data.nombre||data.cod,activo:true}}
+{const _ki=ACT.kioskIn;ACT.kioskIn=async(v,el)=>{if(!kEsMant())return _ki(v,el);
+ let t=MI_TEC&&S.tecs.find(x=>x.cod===MI_TEC);
+ if(!t){const n=(U.user.nombre||'').split(/[\s·]+/)[0].toUpperCase();const c=mantLibres().filter(x=>x.nombre.split(/\s+/)[0].toUpperCase()===n);
+  if(c.length===1){try{t=await mantVincular(c[0].cod)}catch(e){toast(esc(e.message||e),'er');t=null}}}
  U.kiosk=true;Object.assign(K,{tec:t?Object.assign({},t,{lider:true}):null,proy:null,tipo:null,sel:{},sec:null,q:'',mode:'pedir',step:t?3:1});render()}}
+ACT.kMantElegir=async(v,el)=>{const c=(($('#kMantT')||{}).value||'');if(!c){toast('Escoge tu nombre en la lista.','er');return}
+ await sbAccion(el,'Guardando…',async()=>{const t=await mantVincular(c);K.tec=Object.assign({},t,{lider:true});K.mode='pedir';K.step=3;renderKiosk();toast('Listo: tus solicitudes saldrán a nombre de '+esc(t.nombre)+'. No te lo volverá a preguntar.','ok')})};
 /* Mantenimiento: dentro del TALLER pide como líder (consumibles, herramienta y accesorios); la base solo le deja el TALLER */
 {const _k1=ACT.k1;ACT.k1=async(v,el)=>{if(!kEsMant())return _k1(v,el);
  const c=(($('#kCod')||{}).value||'').trim().toUpperCase(),i=(($('#kIni')||{}).value||'').trim().toUpperCase();if(!c||!i){toast('Escribe tu código y tus iniciales.','er');return}
@@ -8063,8 +8070,10 @@ function kEppDest(){if(!kEppElige())return`<p class="mut">Para: <b>${esc(K.tec.n
   $('#app').innerHTML=`<div class="kwrap">${kEppHead()}<div class="card kcard">${b}</div></div>`;
   const s=$('#kDest');if(s)s.addEventListener('change',e=>{K.dest=e.target.value});return}
  _rk();
- /* Mantenimiento: la primera vez vincula su usuario (no se identifica en cada solicitud) */
- if(kEsMant()&&K.step===1){const h=$('.kcard h2');if(h)h.textContent='Vincula tu usuario (una sola vez)';const pm=$('.kcard p.mut');if(pm)pm.textContent='Escribe tu código y tus iniciales de técnico (los de Técnicos y EPP). Tu usuario queda vinculado a tu ficha y desde ahí tus solicitudes del TALLER y de EPP salen a tu nombre, sin volver a escribirlos.';const bt=$('.kcard [data-act="k1"]');if(bt)bt.textContent='Vincular y continuar'}
+ /* Mantenimiento: si su ficha no se encontró sola, la escoge de la lista una vez (sin código ni iniciales) */
+ if(kEsMant()&&K.step===1){const kc=$('.kcard');if(kc)kc.innerHTML=`<h2>¿Cuál es tu nombre en la lista de técnicos?</h2><p class="mut">Solo esta vez. Tus solicitudes del TALLER y de EPP saldrán a tu nombre, sin escribir código ni iniciales. Si no estás en la lista, pide que te creen en Técnicos y EPP.</p>
+  <div class="fld"><label for="kMantT">Tu nombre</label><select class="sel big" id="kMantT"><option value="">Escoge…</option>${mantLibres().map(t=>`<option value="${esc(t.cod)}">${esc(t.nombre)} · ${esc(t.cod)}${t.cargo?' · '+esc(t.cargo):''}</option>`).join('')}</select></div>
+  <button class="btn big" data-act="kMantElegir" style="margin-top:14px">Continuar</button>`}
  if(K.step===1&&!kEsMant()){const pm=$('.kcard p.mut');if(pm&&/EPP/.test(pm.textContent))pm.textContent='Escribe tu código y tus iniciales, igual que en el QR de horas. Todos los técnicos pueden pedir consumibles y su propio EPP y dotación; los materiales del BOM, devoluciones y daños los pide el líder de producción.'}
  /* Paso 3: la tarjeta de EPP y dotación, aparte de los proyectos (Mantenimiento: solo TALLER y EPP) */
  if(K.step===3&&K.mode==='pedir'){const box=$('.kcard .kopts');if(box){
@@ -8093,6 +8102,43 @@ ACT.kEppGo=async(v,el)=>{const lineas=Object.entries(K.sel).map(([cod,q])=>({cod
 {const _vs=VIEWS.sol;VIEWS.sol=function(){if(!(U.user&&U.user.rol===MANT))return _vs.apply(this,arguments);const all=S.sols;S.sols=all.filter(s=>s.proy===TALLER_ID&&(!MI_TEC||s.pideCod===MI_TEC));try{return _vs.apply(this,arguments)}finally{S.sols=all}}}
 {const _ve=VIEWS.eppsol;VIEWS.eppsol=function(){if(!(U.user&&U.user.rol===MANT))return _ve.apply(this,arguments);const all=ES_DB;ES_DB=all.filter(s=>MI_TEC&&s.tecnico===MI_TEC);try{return _ve.apply(this,arguments)}finally{ES_DB=all}}}
 {const n=NAV.find(x=>x.id==='sol');if(n&&n.badge){const _b=n.badge;n.badge=()=>U.user&&U.user.rol===MANT?S.sols.filter(s=>s.proy===TALLER_ID&&MI_TEC&&s.pideCod===MI_TEC&&(s.estado==='Pendiente'||s.estado==='En preparación')).length:_b()}}
+
+/* ---------- v4.24.0 · Reiniciar el inventario de EPP (solo Gerencia) ---------- */
+let RE=null;
+Object.assign(ACT_PERM,{reEpp:'*',reEppGo:'*'});
+const reNorm=x=>String(x==null?'':x).trim().replace(/\s+/g,' ').toUpperCase();
+ACT.reEppTpl=()=>{if(!window.XLSX){toast('La librería de Excel no cargó.','er');return}const wb=XLSX.utils.book_new();
+ const ws=XLSX.utils.aoa_to_sheet([['DESCRIPCION','UNIDAD','CANTIDAD','VALOR UNITARIO','UBICACION'],['GUANTE DE NITRILO TALLA 9','par',20,5000,'E-2']]);XLSX.utils.book_append_sheet(wb,ws,'Conteo EPP');XLSX.writeFile(wb,'Plantilla_reinicio_EPP.xlsx')};
+ACT.reEpp=()=>{RE={filas:[],errs:[],archivo:''};reModal()};
+function reModal(){const F=RE.filas;const epp=S.mats.filter(m=>m.fam==='EPP');const byD={};epp.forEach(m=>byD[reNorm(m.desc)]=m);
+ const otros={};S.mats.filter(m=>m.fam!=='EPP').forEach(m=>otros[reNorm(m.desc)]=m);
+ const ex=F.filter(f=>byD[reNorm(f.desc)]),nu=F.filter(f=>!byD[reNorm(f.desc)]&&!otros[reNorm(f.desc)]),bad=F.filter(f=>otros[reNorm(f.desc)]&&!byD[reNorm(f.desc)]);
+ const enF=new Set(F.map(f=>reNorm(f.desc)));const cero=epp.filter(m=>!enF.has(reNorm(m.desc))&&disp(m)>0);
+ const val=F.reduce((a,f)=>{const m=byD[reNorm(f.desc)];return a+f.q*(m&&m.costo&&!(m.cod||'').startsWith('EPP-')?m.costo:(f.costo||(m?m.costo:0)||0))},0);
+ const errs=RE.errs.concat(bad.map(f=>`«${f.desc}» ya existe como ${otros[reNorm(f.desc)].fam} (${otros[reNorm(f.desc)].cod}): este reinicio solo toca EPP`));
+ modal(mh('Reiniciar inventario de EPP','Deja la existencia de todo el EPP igual al conteo nuevo del Excel. Solo la familia EPP: la dotación y lo demás no se tocan. El kárdex no se borra: cada diferencia queda como ajuste.')+`
+ <div class="acts" style="margin-bottom:10px"><button class="btn ghost sm" data-act="reEppTpl">${icon('xls',14)}Descargar plantilla</button></div>
+ <label class="tcfmm"><input type="file" id="reF" accept=".xlsx,.xls" hidden>${icon('upload',18)}<span><b>${RE.archivo?esc(RE.archivo):'Escoger el Excel del conteo de EPP'}</b><small>Columnas: DESCRIPCION, UNIDAD, CANTIDAD, VALOR UNITARIO, UBICACION. Ítems sin código: si la descripción ya existe como EPP se ajusta ese material; si no, se crea con código EPP-0001…</small></span></label>
+ ${F.length?`<div class="kv" style="margin-top:12px"><dt>Filas del Excel</dt><dd>${F.length}</dd><dt>EPP que ya existe (se ajusta)</dt><dd>${ex.length}</dd><dt>EPP nuevo (se crea)</dt><dd>${nu.length}</dd><dt>EPP con existencia que no está en el Excel (queda en 0)</dt><dd>${cero.length}</dd><dt>Unidades después</dt><dd>${nf0.format(F.reduce((a,f)=>a+f.q,0))}</dd><dt>Valor aproximado después</dt><dd>${mm(val)}</dd></div>
+  ${cero.length?`<div class="note wa" style="margin-top:10px">${icon('warn',16)}<span>Quedan en 0: ${cero.slice(0,8).map(m=>esc(m.desc)+' ('+qf(disp(m))+')').join(', ')}${cero.length>8?' y '+(cero.length-8)+' más':''}.</span></div>`:''}
+  <div class="tw" style="max-height:220px;overflow:auto;margin-top:10px"><table class="t"><thead><tr><th>Descripción</th><th>Unidad</th><th class="r">Cantidad</th><th class="r">Valor unit.</th><th>Queda como</th></tr></thead><tbody>${F.map(f=>{const m=byD[reNorm(f.desc)];return`<tr><td>${esc(f.desc)}</td><td>${esc(f.um)}</td><td class="num">${qf(f.q)}</td><td class="num">${money(f.costo||0)}</td><td>${m?'<b>'+esc(m.cod)+'</b> · ajusta':'<span class="bd ok">Nuevo EPP-</span>'}</td></tr>`}).join('')}</tbody></table></div>`:''}
+ ${errs.length?errBox('Corrige el Excel',errs.slice(0,12)):''}
+ ${F.length&&!errs.length?`<div class="fld" style="margin-top:12px"><label for="reConf">Para confirmar, escribe REINICIAR EPP</label><input class="inp" id="reConf" autocomplete="off" placeholder="REINICIAR EPP"></div>`:''}
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="reEppGo" ${F.length&&!errs.length?'':'disabled'}>${icon('check',16)}Reiniciar inventario de EPP</button></div>`,'w');
+ $('#reF').addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;try{const rows=await readXlsx(f);reParse(rows,f.name)}catch(er){toast('No se pudo leer: '+esc(er.message||er),'er')}})}
+function reParse(rows,nombre){const h=hdr(rows,['DESCRIPCION','CANTIDAD']);RE={filas:[],errs:[],archivo:nombre};
+ if(!h){RE.errs.push('No encontré las columnas DESCRIPCION y CANTIDAD.');reModal();return}
+ const cD=h.col('DESCRIPCION'),cU=h.col('UNIDAD'),cQ=h.col('CANTIDAD'),cV=h.col('VALOR'),cB=h.col('UBICACION');const vistos={};
+ rows.slice(h.i+1).forEach((r,k)=>{if(!r)return;const d=reNorm(r[cD]);if(!d)return;const q=numv(r[cQ]);const v=cV>=0?numv(r[cV]):0;const um=cU>=0&&r[cU]!=null&&String(r[cU]).trim()?String(r[cU]).trim():'und';
+  if(isNaN(q)||q<0)RE.errs.push(`Fila ${h.i+k+2} (${d}): cantidad no válida`);
+  if(vistos[d])RE.errs.push(`«${d}» está repetida en el archivo`);vistos[d]=1;
+  if(!['und','kg','m','gal','L','rollo','cil','par'].includes(um))RE.errs.push(`Fila ${h.i+k+2} (${d}): la unidad «${um}» no es válida (und, par, kg, m, gal, L, rollo, cil)`);
+  RE.filas.push({desc:d,um,q:isNaN(q)?0:q,costo:isNaN(v)?0:v,ub:cB>=0&&r[cB]!=null?String(r[cB]).trim():''})});
+ if(!RE.filas.length)RE.errs.push('El archivo no trae filas con descripción.');reModal()}
+ACT.reEppGo=async(v,el)=>{if(!RE||!RE.filas.length)return;if((($('#reConf')||{}).value||'').trim().toUpperCase()!=='REINICIAR EPP'){toast('Escribe REINICIAR EPP para confirmar.','er');return}
+ await sbAccion(el,'Reiniciando…',async()=>{const {data,error}=await SB.rpc('alm_epp_reiniciar',{p:{confirmar:'REINICIAR EPP',archivo:RE.archivo,filas:RE.filas}});if(error)throw error;RE=null;
+  await cargarDatos();closeModal();rerender();toast(`${esc(data.documento)}: ${data.ajustados} EPP ajustados, ${data.nuevos} creados y ${data.en_cero} quedaron en 0. Valor del EPP: ${mm(+data.valor||0)}.`,'ok')})};
+{const _vi=VIEWS.eppinv;VIEWS.eppinv=function(){let h=_vi.apply(this,arguments);if(U.user&&U.user.rol==='Gerencia'){const k='<div class="acts">'+xbtns('eppinv')+'</div>';if(h.includes(k))h=h.replace(k,'<div class="acts">'+xbtns('eppinv')+`<button class="btn ghost" data-act="reEpp">${icon('upload',16)}Reiniciar inventario de EPP (Excel)</button></div>`)}return h}}
 
 </script>
 </body>
