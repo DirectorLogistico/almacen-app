@@ -1023,7 +1023,7 @@ const icon=(n,s=20)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24
 'use strict';
 /* ================= Núcleo ================= */
 const BLANCO=!!SEED.blank;
-const VERSION='4.22.0 · bloque 6';
+const VERSION='4.23.0 · bloque 6';
 const SKEY=BLANCO?'latamks_alm_blanco_v1':'latamks_alm_maqueta_v22',UKEY=BLANCO?'latamks_alm_ui_blanco':'latamks_alm_ui_v2';
 const hoyReal=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
 let HOY=BLANCO?hoyReal():SEED.hoy;
@@ -7891,6 +7891,192 @@ function lpVista(p){const {R,cortes,sie}=lpDatos(p);const tot=R.reduce((a,r)=>({
  const bt=`<button class="${U.tab.pj==='lam'?'on':''}" data-act="tab" data-k="pj" data-v="lam">Láminas</button>`;
  if(h.includes(tb))h=h.replace(tb,tb+bt);else if(h.includes(tb0))h=h.replace(tb0,tb0+bt);
  if(U.tab.pj==='lam')h+=lpVista(p);return h}}
+
+/* =====================================================================
+   v4.23.0 · SQL 38 · EPP y dotación sin proyecto · Gestión Humana y Mantenimiento
+   · Perfil «Gestión Humana» (Susana y Ricardo): solo ve «Solicitudes de EPP»,
+     «Técnicos y EPP» e «Inventario EPP y dotación». Pide EPP y dotación para
+     cualquier técnico (escoge para qué operario es y quién hace la solicitud)
+     y crea, habilita o deshabilita técnicos.
+   · Perfil «Mantenimiento» (Helder): ve todo el menú; pide material para el
+     TALLER (consumibles, herramienta y accesorios) y su propio EPP.
+   · Solicitud de material (app y QR): tarjeta «EPP y dotación · sin proyecto».
+     El líder de producción pide para cualquier técnico; los demás, para sí mismos.
+   · Almacén entrega con la firma de quien recibe: descuenta de AL001 (gasto
+     general) y queda en el historial de entregas del técnico.
+   · El EPP y la dotación ya no se piden dentro de un proyecto ni del TALLER.
+   ===================================================================== */
+const GH='Gestión Humana',MANT='Mantenimiento';
+const EPP_FAM=['EPP','Dotación'];
+const GH_SOLICITANTES=['Susana','Ricardo'];
+let ES_DB=[],ESN=null,ESE=null;
+Object.assign(ROLES,{
+ [GH]:{d:'Susana y Ricardo: piden EPP y dotación para los técnicos, ven el inventario de EPP y dotación y crean, habilitan o deshabilitan técnicos. Solo ve esas pantallas.'},
+ [MANT]:{d:'Líder de mantenimiento: pide material para el TALLER (consumibles, herramienta y accesorios) y su propio EPP y dotación. El resto, solo lo ve.'}});
+if(typeof ROLES_TODOS!=='undefined'){[GH,MANT].forEach(r=>{if(!ROLES_TODOS.includes(r))ROLES_TODOS.push(r)})}
+PERM[GH]=['eppsol.new','tec.edit'];
+PERM[MANT]=['sol.new','eppsol.new'];
+['Producción','Auxiliar'].forEach(r=>{if(PERM[r]!=='*'&&!PERM[r].includes('eppsol.new'))PERM[r].push('eppsol.new')});
+if(PERM['Auxiliar']!=='*'&&!PERM['Auxiliar'].includes('eppsol.ent'))PERM['Auxiliar'].push('eppsol.ent');
+Object.assign(ACT_PERM,{esNueva:'eppsol.new',esGo:'eppsol.new',esEnt:'eppsol.ent',esEntGo:'eppsol.ent',kioskEpp:'eppsol.new'});
+if(typeof ROL_QR!=='undefined'&&!ROL_QR.includes(MANT))ROL_QR.push(MANT);
+
+/* Menú: dos pantallas nuevas; Mantenimiento ve todo; Gestión Humana solo lo suyo */
+(()=>{const iS=NAV.findIndex(n=>n.id==='sol');const todos=[...new Set([...(typeof ROLES_TODOS!=='undefined'?ROLES_TODOS:Object.keys(PERM))])];
+ NAV.splice(iS+1,0,{id:'eppsol',t:'Solicitudes de EPP',ic:'shield',r:todos.slice(),badge:()=>U.user&&['Gerencia','Auxiliar'].includes(U.user.rol)?ES_DB.filter(s=>s.estado==='Pendiente').length:0});
+ const iM=NAV.findIndex(n=>n.id==='mat');NAV.splice(iM+1,0,{id:'eppinv',t:'Inventario EPP y dotación',ic:'box',r:todos.slice()});
+ NAV.forEach(n=>{if(!n.id||!Array.isArray(n.r))return;if(!n.r.includes(MANT))n.r.push(MANT);
+  const gh=['eppsol','epp','eppinv'].includes(n.id);const i=n.r.indexOf(GH);if(gh&&i<0)n.r.push(GH);if(!gh&&i>=0)n.r.splice(i,1)})})();
+
+{const _cd=cargarDatos;cargarDatos=async function(){const r=await _cd.apply(this,arguments);if(U.kiosk&&!U.user)return r;
+ try{ES_DB=(await leerTodo('alm_epp_solicitudes','*','id')||[]).sort((a,b)=>b.id.localeCompare(a.id))}catch(e){ES_DB=[]}
+ return r}}
+const esEst=e=>e==='Entregada'?'<span class="bd ok">Entregada</span>':e==='Anulada'?'<span class="bd">Anulada</span>':'<span class="bd wa">Pendiente</span>';
+const esLin=s=>(s.lineas||[]).map(l=>`${qf(+l.q)} × ${esc((MI[l.cod]||{}).desc||l.cod)}`).join('<br>');
+const esPuedeAnular=s=>s.estado==='Pendiente'&&!!U.user&&(['Gerencia','Auxiliar'].includes(U.user.rol)||(U.user.rol===GH&&s.canal==='App'&&GH_SOLICITANTES.includes(s.pide)));
+
+/* ---------- Solicitudes de EPP ---------- */
+VIEWS.eppsol=function(){const fl=U.f.esE||'Pendiente';const mes=HOY.slice(0,7);
+ const L=ES_DB.filter(s=>!fl||s.estado===fl);const pend=ES_DB.filter(s=>s.estado==='Pendiente');
+ const entMes=ES_DB.filter(s=>s.estado==='Entregada'&&String(s.entregado_en||'').slice(0,7)===mes);
+ const valMes=entMes.reduce((a,s)=>a+(s.entregado||[]).reduce((b,l)=>b+(+l.q||0)*((MI[l.cod]||{}).costo||0),0),0);
+ regT('eppsol','Solicitudes de EPP y dotación',['Solicitud','Fecha','Técnico que recibe','Código técnico','Pidió','Canal','Elementos','Estado','Entregó','Fecha de entrega'],
+  L.map(s=>[s.id,s.fecha,s.tecnico_nombre,s.tecnico,s.pide,s.canal,(s.lineas||[]).map(l=>`${l.q} ${(MI[l.cod]||{}).desc||l.cod}`).join('; '),s.estado,s.entrego||'',s.entregado_en?String(s.entregado_en).slice(0,10):'']));
+ const nuevo=U.user&&[GH,'Gerencia','Auxiliar'].includes(U.user.rol)?`<button class="btn" data-act="esNueva">${icon('plus',16)}Nueva solicitud de EPP</button>`
+  :`<button class="btn" data-act="kioskEpp">${icon('plus',16)}Nueva solicitud de EPP</button>`;
+ return`<div class="g12 minis" style="margin-bottom:16px">
+  <div class="c4">${kpi('Pendientes de entregar',nf0.format(pend.length),pend.length?'La más antigua: '+fd(pend.at(-1).fecha):'Al día','clock')}</div>
+  <div class="c4">${kpi('Entregadas este mes',nf0.format(entMes.length),'Con firma de quien recibe','check')}</div>
+  <div class="c4">${kpi('Valor entregado este mes',mm(valMes),'Al costo de Siesa · gasto general','box')}</div></div>
+ <div class="card"><div class="ch"><div><h3>Solicitudes de EPP y dotación</h3><p>El EPP y la dotación no se cargan a ningún proyecto: se piden aquí (o en el QR del taller, en «EPP y dotación») para un técnico de la lista. Almacén entrega con la firma de quien recibe y descuenta de AL001. El historial de cada técnico está en Técnicos y EPP › Historial de entregas.</p></div><div class="acts">${xbtns('eppsol')}${nuevo}</div></div>
+  <div class="fbar">${seg('esE',[['Pendiente','Pendientes ('+pend.length+')'],['Entregada','Entregadas'],['Anulada','Anuladas'],['','Todas']],fl)}</div>
+  ${L.length?`<div class="tw"><table class="t"><thead><tr><th>Solicitud</th><th>Técnico que recibe</th><th>Elementos</th><th>Pidió</th><th>Estado</th><th></th></tr></thead><tbody>${L.map(s=>`<tr>
+   <td class="nm"><b>${esc(s.id)}</b><div class="sub">${fd(s.fecha)} · ${esc(s.hora||'')} · ${esc(s.canal)}</div></td>
+   <td><b>${esc(s.tecnico_nombre)}</b><div class="sub">${esc(s.tecnico)}</div></td>
+   <td>${esLin(s)}${s.nota?`<div class="sub">Nota: ${esc(s.nota)}</div>`:''}</td>
+   <td>${esc(s.pide)}</td>
+   <td>${esEst(s.estado)}${s.estado==='Entregada'?`<div class="sub">${esc(s.entrego||'')} · ${fd(String(s.entregado_en).slice(0,10))}</div>`:''}${s.estado==='Anulada'?`<div class="sub">${esc(s.anulado_motivo||'')}</div>`:''}</td>
+   <td class="r" style="white-space:nowrap">${s.estado==='Pendiente'?`<button class="btn sm" data-act="esEnt" data-v="${esc(s.id)}">${icon('check',14)}Entregar</button>`:''}${esPuedeAnular(s)?` <button class="btn ghost sm" data-act="esAnu" data-v="${esc(s.id)}">${icon('x',14)}Anular</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:empty(fl==='Pendiente'?'No hay solicitudes pendientes':'Sin solicitudes en este filtro','check')}</div>`};
+
+/* Nueva solicitud (Gestión Humana, Gerencia o Auxiliar) */
+ACT.esNueva=()=>{ESN={tec:'',sol:U.user&&U.user.rol===GH?'':(U.user?U.user.nombre:''),sel:{},q:'',fam:'',tok:'es'+Date.now()+Math.random().toString(36).slice(2,7)};esModal()};
+function esLista(){const q=nrmH(ESN.q||'');const L=S.mats.filter(m=>EPP_FAM.includes(m.fam)&&m.activo!==false&&(!ESN.fam||m.fam===ESN.fam)&&(!q||nrmH(m.cod+' '+m.desc).includes(q))).sort((a,b)=>a.desc.localeCompare(b.desc)).slice(0,60);
+ return L.length?L.map(m=>{const on=ESN.sel[m.cod]!=null;const d=disp(m);return`<label class="kli"><input type="checkbox" data-esc="${esc(m.cod)}" ${on?'checked':''}><span><b>${esc(m.desc)}</b><small>${esc(m.cod)} · ${esc(m.fam)} · ${d>0?'disponible '+qf(d,m.um)+' '+esc(m.um):'<span style="color:var(--wa)">sin existencia: queda pendiente hasta que llegue</span>'}</small></span><input class="inp" type="number" min="1" step="1" data-esq="${esc(m.cod)}" value="${on?ESN.sel[m.cod]:1}"></label>`}).join(''):empty('No hay EPP ni dotación con ese nombre','box')}
+function esModal(){const tecs=S.tecs.filter(t=>t.activo).sort((a,b)=>a.nombre.localeCompare(b.nombre));const gh=U.user&&U.user.rol===GH;
+ modal(mh('Nueva solicitud de EPP y dotación','No se carga a ningún proyecto. Almacén la entrega con la firma del técnico y la descuenta del inventario.')+`
+ <div class="two"><div class="fld"><label for="esTec">¿Para qué operario es?</label><select class="sel" id="esTec"><option value="">Escoge el técnico…</option>${tecs.map(t=>`<option value="${esc(t.cod)}" ${t.cod===ESN.tec?'selected':''}>${esc(t.nombre)} · ${esc(t.cod)}${t.cargo?' · '+esc(t.cargo):''}</option>`).join('')}</select></div>
+ <div class="fld"><label for="esSol">¿Quién hace la solicitud?</label>${gh?`<select class="sel" id="esSol"><option value="">Escoge…</option>${GH_SOLICITANTES.map(n=>`<option ${n===ESN.sol?'selected':''}>${esc(n)}</option>`).join('')}</select>`:`<input class="inp" id="esSol" value="${esc(ESN.sol)}">`}</div></div>
+ <div class="two" style="margin-top:10px"><div class="fld"><label for="esQ">Buscar EPP o dotación</label><input class="inp" id="esQ" placeholder="Ej.: guantes, botas, camisa" value="${esc(ESN.q)}" autocomplete="off"></div>
+ <div class="fld"><label for="esFam">Familia</label><select class="sel" id="esFam"><option value="">EPP y dotación</option>${EPP_FAM.map(f=>`<option ${f===ESN.fam?'selected':''}>${f}</option>`).join('')}</select></div></div>
+ <div id="esL" style="max-height:340px;overflow:auto;margin-top:10px">${esLista()}</div>
+ <div class="fld" style="margin-top:10px"><label for="esNota">Nota para almacén (opcional)</label><input class="inp" id="esNota" maxlength="300" placeholder="Ej.: talla 42, ingresa el lunes"></div>
+ <div class="mf"><span class="sub" id="esN">${Object.keys(ESN.sel).length} elemento(s)</span><div class="sp"></div><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="esGo">${icon('check',16)}Enviar solicitud</button></div>`,'w');
+ const up=()=>{$('#esL').innerHTML=esLista();$('#esN').textContent=Object.keys(ESN.sel).length+' elemento(s)'};
+ $('#esTec').addEventListener('change',e=>ESN.tec=e.target.value);$('#esSol').addEventListener('change',e=>ESN.sol=e.target.value.trim());
+ $('#esQ').addEventListener('input',e=>{ESN.q=e.target.value;clearTimeout(esModal.t);esModal.t=setTimeout(up,200)});
+ $('#esFam').addEventListener('change',e=>{ESN.fam=e.target.value;up()});
+ $('#esL').addEventListener('change',e=>{const c=e.target.dataset.esc,k=e.target.dataset.esq;
+  if(c!=null){if(e.target.checked){const q=$(`[data-esq="${CSS.escape(c)}"]`);ESN.sel[c]=Math.max(1,+(q&&q.value)||1)}else delete ESN.sel[c];$('#esN').textContent=Object.keys(ESN.sel).length+' elemento(s)'}
+  if(k!=null&&ESN.sel[k]!=null)ESN.sel[k]=Math.max(1,+e.target.value||1)})}
+ACT.esGo=async(v,el)=>{if(!ESN)return;ESN.tec=$('#esTec').value;ESN.sol=($('#esSol').value||'').trim();
+ if(!ESN.tec){toast('Escoge para qué operario es.','er');return}if(!ESN.sol){toast('Escoge quién hace la solicitud.','er');return}
+ const lineas=Object.entries(ESN.sel).map(([cod,q])=>({cod,q:+q})).filter(l=>l.q>0);if(!lineas.length){toast('Marca al menos un elemento.','er');return}
+ await sbAccion(el,'Enviando…',async()=>{const {data,error}=await SB.rpc('alm_epp_sol_crear',{p:{dest:ESN.tec,solicitante:ESN.sol,nota:($('#esNota').value||'').trim(),lineas,tok:ESN.tok}});if(error)throw error;
+  ESN=null;await cargarDatos();closeModal();U.view='eppsol';U.f.esE='Pendiente';rerender();toast(`${esc(data.id)} enviada para ${esc(data.tecnico)}. Almacén la entrega con su firma.`,'ok')})};
+
+/* Entregar (Auxiliar o Gerencia): firma de quien recibe; descuenta de AL001 */
+ACT.esEnt=id=>{const s=ES_DB.find(x=>x.id===id);if(!s)return;ESE={id};
+ modal(mh('Entregar '+esc(s.id),`Para ${esc(s.tecnico_nombre)} (${esc(s.tecnico)}) · pidió ${esc(s.pide)}. Sale de AL001 como gasto general y queda en el historial del técnico.`)+`
+ <div class="tw"><table class="t"><thead><tr><th></th><th>Elemento</th><th class="r">Pedido</th><th class="r">Disponible</th><th class="r">Entregar</th></tr></thead><tbody>${(s.lineas||[]).map((l,i)=>{const m=MI[l.cod]||{desc:l.cod,um:''};const d=MI[l.cod]?disp(m):0;const q=Math.min(+l.q,Math.max(0,Math.floor(d*1000)/1000));
+  return`<tr><td><input type="checkbox" data-eei="${i}" ${q>0?'checked':''}></td><td><b>${esc(m.desc)}</b><div class="sub">${esc(l.cod)}</div></td><td class="num">${qf(+l.q)}</td><td class="num">${qf(d)}</td><td class="num"><input class="inp num" style="max-width:90px;text-align:right" data-eeq="${i}" value="${q||+l.q}" inputmode="decimal"></td></tr>`}).join('')}</tbody></table></div>
+ <div class="fld" style="margin-top:12px"><label for="eeMot">Motivo</label><select class="sel" id="eeMot"><option>Primera entrega</option><option>Reposición por desgaste</option><option>Pérdida</option><option>Daño</option></select></div>
+ <div class="lb" style="margin:14px 0 6px">Firma de ${esc(s.tecnico_nombre)} (recibe)</div><canvas id="sig" class="sig" width="600" height="150" aria-label="Espacio para firmar"></canvas><button class="btn link sm" data-act="sigClr">Borrar firma</button>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn" data-act="esEntGo">${icon('check',16)}Registrar entrega</button></div>`,'w');
+ const cv=$('#sig'),cx=cv.getContext('2d');SIG={drawn:false};let on=false;cx.lineWidth=2.4;cx.lineCap='round';cx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--tx').trim()||'#000';
+ const pt=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]};
+ cv.addEventListener('pointerdown',e=>{on=true;cv.setPointerCapture(e.pointerId);const [x,y]=pt(e);cx.beginPath();cx.moveTo(x,y)});cv.addEventListener('pointermove',e=>{if(!on)return;const [x,y]=pt(e);cx.lineTo(x,y);cx.stroke();SIG.drawn=true});cv.addEventListener('pointerup',()=>on=false)};
+ACT.esEntGo=async(v,el)=>{const s=ESE&&ES_DB.find(x=>x.id===ESE.id);if(!s)return;
+ const items=(s.lineas||[]).map((l,i)=>({cod:l.cod,q:numIn(($(`[data-eeq="${i}"]`)||{}).value),on:($(`[data-eei="${i}"]`)||{}).checked})).filter(x=>x.on&&x.q>0).map(({cod,q})=>({cod,q}));
+ if(!items.length){toast('Marca al menos un elemento.','er');return}if(!SIG||!SIG.drawn){toast('Falta la firma de quien recibe.','er');return}
+ const firma=$('#sig').toDataURL('image/png');
+ await sbAccion(el,'Registrando…',async()=>{const {data,error}=await SB.rpc('alm_epp_sol_entregar',{p:{id:s.id,mot:$('#eeMot').value,firma,items}});if(error)throw error;
+  ESE=null;await cargarDatos();closeModal();rerender();toast(`${esc(data.id)}: ${data.n} elemento(s) entregados a ${esc(data.tecnico)} con firma (${mm(+data.valor||0)}, gasto general).`,'ok')})};
+ACT.esAnu=id=>{modal(mh('Anular '+esc(id),'La solicitud queda como «Anulada» con el motivo. No mueve inventario.')+`<div class="fld"><label for="esAm">Motivo</label><input class="inp" id="esAm" maxlength="200" placeholder="Ej.: el técnico ya no está en la empresa"></div>
+ <div class="mf"><button class="btn ghost" data-act="closeM">Cancelar</button><button class="btn dng" data-act="esAnuGo" data-v="${esc(id)}">Anular</button></div>`)};
+ACT.esAnuGo=async(id,el)=>{const mo=$('#esAm').value.trim();if(mo.length<4){toast('Escribe el motivo.','er');return}
+ await sbAccion(el,'Anulando…',async()=>{const {error}=await SB.rpc('alm_epp_sol_anular',{p_id:id,p_motivo:mo});if(error)throw error;await cargarDatos();closeModal();rerender();toast(esc(id)+' anulada.','ok')})};
+
+/* ---------- Inventario de EPP y dotación (cantidades y costos) ---------- */
+VIEWS.eppinv=function(){const fam=U.f.eiF||'';const q=nrmH(U.f.eiQ||'');
+ const pend={};ES_DB.filter(s=>s.estado==='Pendiente').forEach(s=>(s.lineas||[]).forEach(l=>{pend[l.cod]=(pend[l.cod]||0)+(+l.q||0)}));
+ const L=S.mats.filter(m=>EPP_FAM.includes(m.fam)&&m.activo!==false&&(!fam||m.fam===fam)&&(!q||nrmH(m.cod+' '+m.desc).includes(q))).map(m=>({m,d:disp(m),p:pend[m.cod]||0,v:disp(m)*(m.costo||0)})).sort((a,b)=>a.m.desc.localeCompare(b.m.desc));
+ const tot=L.reduce((a,x)=>({u:a.u+x.d,v:a.v+x.v}),{u:0,v:0});const sinS=L.filter(x=>x.d<=0).length;const falta=L.filter(x=>x.p>x.d).length;
+ regT('eppinv','Inventario de EPP y dotación',['Código','Descripción','Familia','Unidad','Ubicación','Existencia AL001','Pendiente por entregar','Costo unitario (Siesa)','Valor'],L.map(x=>[x.m.cod,x.m.desc,x.m.fam,x.m.um,(x.m.ub&&x.m.ub.AL001)||'',+x.d.toFixed(3),x.p,Math.round(x.m.costo||0),Math.round(x.v)]));
+ return`<div class="g12 minis" style="margin-bottom:16px">
+  <div class="c3">${kpi('Referencias',nf0.format(L.length),fam||'EPP y dotación','layers')}</div>
+  <div class="c3">${kpi('Unidades en almacén',nf0.format(tot.u),'Existencia en AL001','box')}</div>
+  <div class="c3">${kpi('Valor del inventario',mm(tot.v),'Al costo de Siesa','check')}</div>
+  <div class="c3">${kpi('Sin existencia',nf0.format(sinS),falta?falta+' con pedidos pendientes mayores a la existencia':'Sin faltantes por pedidos','warn')}</div></div>
+ <div class="card"><div class="ch"><div><h3>Inventario de EPP y dotación</h3><p>Existencia en el almacén principal (AL001), lo que está pendiente por entregar en solicitudes y su valor al costo de Siesa.</p></div><div class="acts">${xbtns('eppinv')}</div></div>
+  <div class="fbar">${seg('eiF',[['','Todas'],['EPP','EPP'],['Dotación','Dotación']],fam)}<div class="sp"></div><input class="inp" id="eiQ" data-f="eiQ" style="max-width:260px" placeholder="Buscar código o descripción" value="${esc(U.f.eiQ||'')}"></div>
+  ${L.length?`<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Familia</th><th class="r">Existencia</th><th class="r">Pendiente por entregar</th><th class="r">Costo unit.</th><th class="r">Valor</th></tr></thead><tbody>${L.map(x=>`<tr>
+   <td class="nm">${cc(x.m.cod)}</td><td>${esc(x.m.desc)}${x.m.ub&&x.m.ub.AL001?`<div class="sub">${esc(x.m.ub.AL001)}</div>`:''}</td><td>${esc(x.m.fam)}</td>
+   <td class="num"><b style="${x.d<=0?'color:var(--er)':''}">${qf(x.d,x.m.um)}</b> <span class="sub">${esc(x.m.um)}</span></td>
+   <td class="num">${x.p?`<b style="${x.p>x.d?'color:var(--wa)':''}">${qf(x.p)}</b>`:'—'}</td><td class="num">${money(x.m.costo||0)}</td><td class="num">${money(x.v)}</td></tr>`).join('')}
+   <tr><td colspan="3"><b>Total</b></td><td class="num"><b>${nf0.format(tot.u)}</b></td><td></td><td></td><td class="num"><b>${money(tot.v)}</b></td></tr></tbody></table></div>`:empty('No hay EPP ni dotación con ese filtro','box')}</div>`};
+
+/* ---------- Solicitud de material (app y QR): tarjeta «EPP y dotación · sin proyecto» ---------- */
+const kEsMant=()=>!!(U.user&&U.user.rol===MANT&&!(typeof KQ!=='undefined'&&KQ.on));
+const kEppElige=()=>!!K.tec&&((typeof KQ!=='undefined'&&KQ.on)?!!K.tec.lider:!!U.user&&(U.user.rol==='Gerencia'||(U.user.rol==='Producción'&&K.tec.lider)));
+const kTecs=()=>((typeof KQ!=='undefined'&&KQ.on)?(KQ.tecs||[]):S.tecs.filter(t=>t.activo)).slice().sort((a,b)=>a.nombre.localeCompare(b.nombre));
+if(SB&&SB.rpc){const _r=SB.rpc.bind(SB);SB.rpc=function(fn,a,o){const pr=_r(fn,a,o);if(fn!=='alm_kiosk_datos')return pr;
+ return Promise.resolve(pr).then(res=>{try{if(typeof KQ!=='undefined'&&res&&res.data)KQ.tecs=res.data.tecnicos||[]}catch(e){}return res})}}
+ACT.kioskEpp=()=>{if(!can('eppsol.new')){toast('Tu perfil no pide EPP.','wa');return}ACT.kioskIn();if(U.kiosk&&K.tec){K.mode='pedir';K.proy='EPP';K.step=4;K.sel={};K.q='';K.dest=kEppElige()?'':K.tec.cod;renderKiosk()}};
+{const _ki=ACT.kioskIn;ACT.kioskIn=(v,el)=>{if(!kEsMant())return _ki(v,el);
+ const n=(U.user.nombre||'').split(/[\s·]+/)[0].toUpperCase();const t=S.tecs.find(t=>t.activo&&t.nombre.split(' ')[0].toUpperCase()===n);
+ U.kiosk=true;Object.assign(K,{tec:t?Object.assign({},t,{lider:true}):null,proy:null,tipo:null,sel:{},sec:null,q:'',mode:'pedir',step:t?3:1});render()}}
+/* Mantenimiento: dentro del TALLER pide como líder (consumibles, herramienta y accesorios); la base solo le deja el TALLER */
+{const _k1=ACT.k1;ACT.k1=async(v,el)=>{await _k1(v,el);if(kEsMant()&&K.tec){K.tec=Object.assign({},K.tec,{lider:true});K.mode='pedir';K.step=3;renderKiosk()}}}
+{const _k2=ACT.k2;ACT.k2=(v,el)=>{if(v!=='EPP')return _k2(v,el);K.proy='EPP';K.step=4;K.sel={};K.q='';K.tab=null;K.dest=kEppElige()?(K.dest||''):K.tec.cod;renderKiosk()}}
+function kEppHead(){const qr=typeof KQ!=='undefined'&&KQ.on;return`<div class="kh"><img class="logoimg" src="${logoSrc()}" alt="" style="height:30px"><div><b>Solicitud de EPP y dotación</b><small>Taller Latamks · ${qr?'QR de solicitud':'sesión: '+esc(U.user?U.user.nombre:'')}${K.tec?' · '+esc(K.tec.nombre):''}</small></div><div class="sp"></div><button class="btn ghost sm" data-act="kioskOut">${U.user?'Volver a la app':'Salir'}</button></div>`}
+function kEppDest(){if(!kEppElige())return`<p class="mut">Para: <b>${esc(K.tec.nombre)}</b></p>`;
+ return`<div class="fld" style="margin-bottom:12px"><label for="kDest">¿Para qué operario es?</label><select class="sel big" id="kDest"><option value="">Escoge el técnico…</option>${kTecs().map(t=>`<option value="${esc(t.cod)}" ${t.cod===K.dest?'selected':''}>${esc(t.nombre)} · ${esc(t.cod)}</option>`).join('')}</select></div>`}
+{const _rk=renderKiosk;renderKiosk=function(){
+ if(K.proy==='EPP'&&K.mode==='pedir'&&(K.step===4||K.step===5)&&K.tec){$('#app').className='app kiosk';let b;
+  if(K.step===4){const q=nrmH(K.q||'');const L=S.mats.filter(m=>EPP_FAM.includes(m.fam)&&!m.cl&&(!q||nrmH(m.cod+' '+m.desc).includes(q))).sort((a,c)=>a.desc.localeCompare(c.desc)).slice(0,40);const n=Object.keys(K.sel).length;
+   b=`<h2><span class="pnum">EPP</span> EPP y dotación · sin proyecto</h2><div class="note" style="margin:6px 0 12px">${icon('info',16)}<span>No se carga a ningún proyecto. Almacén lo entrega con la firma de quien recibe.</span></div>${kEppDest()}
+   <div class="fld" style="margin-bottom:12px"><label for="kQ">Buscar por código o descripción</label><input class="inp big" id="kQ" data-f="kQ" value="${esc(K.q||'')}" placeholder="Ej.: guantes, botas, camisa"></div>
+   ${L.map(m=>kli(m.cod,m.desc,1,`${esc(m.fam)} · ${disp(m)>0?'disponible '+qf(disp(m),m.um)+' '+esc(m.um):'sin existencia: queda pendiente'}`,null,null)).join('')||empty('No hay EPP ni dotación con ese nombre','box')}
+   <div class="kbar"><span><b>${n}</b> elemento(s)</span><button class="btn" data-act="kEppRev" ${n?'':'disabled'}>Revisar y enviar</button></div><button class="btn link" data-act="kBack">Volver</button>`}
+  else{const L=Object.entries(K.sel);const d=K.dest&&(kTecs().find(t=>t.cod===K.dest)||(K.tec.cod===K.dest?K.tec:null));
+   b=`<h2>Revisa tu solicitud de EPP</h2><p class="mut">Para <b>${esc(d?d.nombre:K.tec.nombre)}</b> · pide ${esc(K.tec.nombre)}</p>${tbl(['Elemento','Familia','Cantidad'],L.map(([c,q])=>[`<b>${esc(M(c).desc)}</b><div class="sub">${esc(c)}</div>`,esc(M(c).fam),qf(q)+' '+esc(M(c).um)]),[2])}
+   <div class="fld" style="margin-top:12px"><label for="kNota">Nota para almacén (opcional)</label><input class="inp big" id="kNota" placeholder="Ej.: talla 42"></div>
+   <button class="btn big" data-act="kEppGo" style="margin-top:14px">${icon('check',18)}Enviar solicitud</button><button class="btn link" data-act="kBack">Volver</button>`}
+  $('#app').innerHTML=`<div class="kwrap">${kEppHead()}<div class="card kcard">${b}</div></div>`;
+  const s=$('#kDest');if(s)s.addEventListener('change',e=>{K.dest=e.target.value});return}
+ _rk();
+ /* Paso 3: la tarjeta de EPP y dotación, aparte de los proyectos (Mantenimiento: solo TALLER y EPP) */
+ if(K.step===3&&K.mode==='pedir'){const box=$('.kcard .kopts');if(box){
+  if(kEsMant())[...box.querySelectorAll('[data-act="k2"]')].forEach(x=>{if(x.dataset.v!==TALLER_ID)x.remove()});
+  if(!box.querySelector('[data-v="EPP"]'))box.insertAdjacentHTML('afterbegin',`<button class="kopt" data-act="k2" data-v="EPP"><span class="pnum">EPP</span><span>EPP y dotación · no es de ningún proyecto</span></button>`)}}
+ /* Paso 4 de un proyecto o del TALLER: sin EPP ni dotación */
+ if(K.step===4&&K.mode==='pedir'&&K.proy!=='EPP'){
+  $$('[data-kc]').forEach(x=>{const m=MI[x.dataset.kc];if(m&&(EPP_FAM.includes(m.fam)||(kEsMant()&&m.fam==='Materia prima'))){const r=x.closest('.kli');if(r)r.remove()}});
+  const be=$('[data-act="kTab"][data-v="epp"]');if(be){if((K.tec&&!K.tec.lider&&!kEsMant())||sinOT(P(K.proy)))be.remove();else if(be.firstChild)be.firstChild.textContent='Herramienta'}
+  if(kEsMant()){const bs=$('[data-act="kTab"][data-v="svc"]');if(bs&&bs.firstChild)bs.firstChild.textContent='Accesorios'}
+  const nt=$('#kSoloCons span');if(nt)nt.innerHTML='Aquí puedes pedir <b>consumibles</b>. El EPP y la dotación se piden en la tarjeta <b>«EPP y dotación»</b>, sin proyecto.';
+  const tn=$('#kTallerNota span');if(tn&&esTaller(P(K.proy)))tn.innerHTML=kEsMant()?'Solicitud para el <b>TALLER</b>: consumibles, herramienta y accesorios. Tu EPP se pide en la tarjeta <b>«EPP y dotación»</b>.':'Solicitud para el <b>TALLER</b> (no es de ningún proyecto). El EPP y la dotación se piden en la tarjeta <b>«EPP y dotación»</b>.'}}}
+ACT.kEppRev=()=>{if(kEppElige()&&!K.dest){toast('Escoge para qué operario es.','er');return}if(!Object.keys(K.sel).length){toast('Marca al menos un elemento.','er');return}K.step=5;renderKiosk()};
+ACT.kEppGo=async(v,el)=>{const lineas=Object.entries(K.sel).map(([cod,q])=>({cod,q:+q})).filter(l=>l.q>0);if(!lineas.length){toast('Marca al menos un elemento.','er');return}
+ const dest=kEppElige()?K.dest:K.tec.cod;const nota=(($('#kNota')||{value:''}).value||'').trim();const tok='es'+Date.now()+Math.random().toString(36).slice(2,7);const qr=typeof KQ!=='undefined'&&KQ.on;
+ await sbAccion(el,'Enviando…',async()=>{const {data,error}=qr
+   ?await SB.rpc('alm_kiosk_solicitar',{p_token:window.QR_TOKEN,p:{tipo:'epp',pide_cod:KQ.tec.cod,pide_ini:KQ.tec.ini,dest,nota,lineas,tok}})
+   :await SB.rpc('alm_epp_sol_crear',{p:{pide_cod:K.tec.cod,pide_ini:K.tec.ini,dest,nota,lineas,tok}});if(error)throw error;
+  if(!qr)await cargarDatos();
+  K.done='Solicitud '+data.id+' enviada';K.doneMsg='Es para '+(data.tecnico||'')+'. Almacén la entrega con su firma; no se carga a ningún proyecto.';K.step=6;K.proy=null;renderKiosk()})};
+
+/* Técnicos y EPP: Gestión Humana crea, habilita y deshabilita (la base lo valida) */
+{const _ve=VIEWS.epp;VIEWS.epp=function(){if(U.user&&U.user.rol===GH&&U.tab.epp==='cons')U.tab.epp='tec';return _ve.apply(this,arguments)}}
 
 </script>
 </body>
